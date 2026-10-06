@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b2540">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Laporan Keuangan Tim</title>
+<style>
+  :root{
+    --ink:#1b2540; --muted:#6b7490; --paper:#f6f7fb; --card:#fff; --line:#e3e6ef;
+    --in:#0d8a6a; --in-bg:#e2f4ee; --out:#c2413b; --out-bg:#fbe9e7; --accent:#2f4bd6; --warn:#b7791f; --warn-bg:#fdf3dc;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);line-height:1.45}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 16px 140px}
+  header.top{display:flex;justify-content:space-between;align-items:center;margin:4px 0 14px;gap:10px}
+  h1{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  .who{font-size:12px;color:var(--muted)}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--line);color:var(--ink)}
+  .pill.founder{background:var(--ink);color:#fff}.pill.admin{background:#dfe5ff;color:var(--accent)}.pill.pending{background:var(--warn-bg);color:var(--warn)}
+  .ghost{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 12px;font:inherit;font-size:14px;cursor:pointer;color:var(--ink)}
+  select,input{font:inherit;color:inherit}
+  .month{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 10px}
+  .balance{background:var(--ink);color:#fff;border-radius:18px;padding:20px}
+  .balance small{opacity:.7;font-size:13px}
+  .balance .big{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:2px 0 14px;font-variant-numeric:tabular-nums}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .split div{background:rgba(255,255,255,.1);border-radius:12px;padding:10px 12px}
+  .split b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+  .split .i b{color:#7ee2c0}.split .o b{color:#ffa9a2}
+  h2{font-size:15px;margin:22px 0 10px}
+  .day{font-size:13px;color:var(--muted);margin:16px 0 6px}
+  .tx{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:6px}
+  .dot{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;flex:none}
+  .tx.in .dot{background:var(--in-bg);color:var(--in)}.tx.out .dot{background:var(--out-bg);color:var(--out)}
+  .tx .t{flex:1;min-width:0}.tx .t b{display:block;font-size:15px;font-weight:600}
+  .tx .t span{font-size:13px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .amt{font-weight:600;font-variant-numeric:tabular-nums;font-size:15px}
+  .in .amt{color:var(--in)}.out .amt{color:var(--out)}
+  .del{border:0;background:none;color:var(--muted);font-size:20px;padding:4px 8px;cursor:pointer;border-radius:6px}
+  .del:hover{color:var(--out)}
+  .empty{text-align:center;color:var(--muted);padding:30px 12px;background:var(--card);border:1px dashed var(--line);border-radius:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .center{min-height:80vh;display:grid;place-content:center;text-align:center;gap:14px;padding:24px}
+  .center p{color:var(--muted);max-width:300px;margin:auto}
+  .btn{border:0;border-radius:12px;padding:13px 20px;font:inherit;font-weight:600;font-size:15px;cursor:pointer;background:var(--accent);color:#fff}
+  .btn.light{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  .fab{position:fixed;right:max(16px,calc(50% - 244px));bottom:calc(80px + env(safe-area-inset-bottom));background:var(--accent);color:#fff;border:0;border-radius:28px;padding:14px 22px;font-weight:600;font-size:15px;box-shadow:0 6px 18px rgba(47,75,214,.35);cursor:pointer}
+  nav.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}
+  nav.bar .in{display:flex;width:100%;max-width:520px}
+  nav.bar button{flex:1;border:0;background:none;padding:14px 4px;font:inherit;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;border-top:3px solid transparent}
+  nav.bar button.on{color:var(--accent);border-top-color:var(--accent)}
+  .weeknav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .weeknav b{font-size:15px}
+  .chart .row{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;padding:7px 0;cursor:pointer;text-align:left;font:inherit;color:inherit}
+  .chart .lab{width:104px;flex:none;font-size:14px}
+  .chart .track{flex:1;height:22px;background:var(--paper);border-radius:6px;overflow:hidden}
+  .chart .track i{display:block;height:100%;border-radius:6px}
+  .chart.out .track i{background:var(--out)}.chart.in .track i{background:var(--in)}
+  .chart .val{width:96px;flex:none;text-align:right;font-size:13px;font-variant-numeric:tabular-nums}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .person{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .person:last-child{border:0}
+  .person img,.person .av{width:38px;height:38px;border-radius:50%;background:var(--line);flex:none;object-fit:cover;display:grid;place-items:center;font-weight:700;color:var(--muted)}
+  .person .t{flex:1;min-width:0}.person .t b{display:block;font-size:15px}
+  .person .t span{font-size:12px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis}
+  .small{padding:7px 12px;border-radius:9px;font-size:13px}
+  dialog{border:0;border-radius:20px 20px 0 0;width:100%;max-width:520px;margin:auto auto 0;padding:20px;background:var(--card)}
+  dialog::backdrop{background:rgba(20,26,48,.45)}
+  .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--paper);border-radius:12px;padding:4px;margin:12px 0}
+  .seg button{border:0;background:none;padding:10px;border-radius:9px;font-weight:600;color:var(--muted);cursor:pointer;font-size:15px}
+  .seg button.on.out{background:var(--out);color:#fff}.seg button.on.in{background:var(--in);color:#fff}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+  .f{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:#fff;font-size:16px}
+  .f:focus,button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .amount{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .actions{display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-top:18px}
+  .err{color:var(--out);font-size:13px;min-height:18px;margin-top:8px}
+  #toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%;text-align:center}
+  #toast.show{opacity:1}
+  @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<dialog id="dlg">
+  <h2 style="margin:0">Catat transaksi</h2>
+  <div class="seg" id="seg">
+    <button type="button" data-t="out" class="on out">Pengeluaran</button>
+    <button type="button" data-t="in">Pemasukan</button>
+  </div>
+  <label for="amount">Jumlah (Rp)</label>
+  <input class="f amount" id="amount" inputmode="numeric" placeholder="0" autocomplete="off">
+  <label for="cat">Kategori</label>
+  <select class="f" id="cat"></select>
+  <label for="memo">Catatan (opsional)</label>
+  <input class="f" id="memo" placeholder="Misal: makan siang" maxlength="80">
+  <label for="date">Tanggal</label>
+  <input class="f" type="date" id="date">
+  <div class="err" id="err"></div>
+  <div class="actions">
+    <button type="button" class="btn light" id="cancel">Batal</button>
+    <button type="button" class="btn" id="save">Simpan</button>
+  </div>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script type="module" src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
