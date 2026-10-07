@@ -103,7 +103,40 @@
   textarea.f{resize:vertical;font-family:inherit}
   dialog{max-height:92vh;overflow:auto}
   #toast{top:16px;bottom:auto}
-  @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+
+  /* ---------- Transisi lembut ---------- */
+  html{scroll-behavior:smooth}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  @keyframes sheetUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .enter > *{animation:rise .38s cubic-bezier(.2,.7,.2,1) both}
+  .enter > *:nth-child(2){animation-delay:.04s}.enter > *:nth-child(3){animation-delay:.08s}
+  .enter > *:nth-child(4){animation-delay:.12s}.enter > *:nth-child(5){animation-delay:.16s}
+  .enter > *:nth-child(n+6){animation-delay:.2s}
+  .enter .txc,.enter .notif,.enter .person{animation:rise .4s cubic-bezier(.2,.7,.2,1) both}
+  .enter .txc:nth-of-type(2),.enter .notif:nth-of-type(2){animation-delay:.05s}
+  .enter .txc:nth-of-type(3),.enter .notif:nth-of-type(3){animation-delay:.1s}
+  .enter .txc:nth-of-type(4),.enter .notif:nth-of-type(4){animation-delay:.15s}
+  .enter .txc:nth-of-type(n+5),.enter .notif:nth-of-type(n+5){animation-delay:.2s}
+  .enter .chart .track i{transform-origin:left center;animation:grow .7s cubic-bezier(.2,.7,.2,1) both .18s}
+  button,select,input,textarea{transition:transform .14s ease,background-color .22s ease,border-color .22s ease,color .22s ease,box-shadow .22s ease,opacity .22s ease}
+  button:active:not(:disabled){transform:scale(.97)}
+  button:disabled{opacity:.5}
+  .chart .row:active .track i{filter:brightness(.9)}
+  .fab{transition:transform .14s ease,box-shadow .22s ease}
+  .fab:active{transform:scale(.96);box-shadow:0 3px 10px rgba(47,75,214,.3)}
+  .f:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,75,214,.12)}
+  nav.bar button{transition:color .22s ease,border-top-color .22s ease,background-color .22s ease}
+  dialog[open]{animation:sheetUp .3s cubic-bezier(.2,.8,.2,1)}
+  dialog[open]::backdrop{animation:fade .25s ease}
+  #toast{transform:translate(-50%,-8px);transition:opacity .25s ease,transform .25s ease}
+  #toast.show{transform:translate(-50%,0)}
+  .badge{animation:fade .3s ease}
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none !important;transition:none !important}
+  }
 </style>
 </head>
 <body>

@@ -16,7 +16,8 @@ const CATS = {
   out: ["Makanan", "Transportasi", "Belanja", "Tagihan", "Hiburan", "Kesehatan", "Lainnya"],
   in: ["Gaji", "Bonus", "Usaha", "Hadiah", "Lainnya"]
 };
-const ROLE_LABEL = { pending: "Menunggu", member: "Anggota", admin: "Admin", founder: "Founder" };
+const ROLE_LABEL = { pending: "Menunggu", member: "Anggota", admin: "Admin", founder: "Founder", removed: "Dikeluarkan" };
+const ROLE_ACT = { approve: "menyetujui", promote: "mengangkat jadi admin", demote: "mencopot dari admin", remove: "mengeluarkan", restore: "memulihkan" };
 const STATUS_LABEL = { open: "Perlu revisi", fixed: "Sudah ditanggapi", admin_fixed: "Diubah admin" };
 
 /* ---------- Helpers ---------- */
@@ -65,8 +66,12 @@ let profile = null, unsubProfile = null, unsubs = [];
 let tab = "catatan", myTx = [], flagged = [], nMine = [], nAll = [], notifs = [];
 let month = todayStr().slice(0, 7);
 let weekOffset = 0, weekTx = [], weekLoading = false, drill = null;
-let people = [], auditFeed = [], feedLoading = false, seenAtOpen = 0;
+let people = [], auditFeed = [], roleLogs = [], feedLoading = false, seenAtOpen = 0;
 let txType = "out";
+let layers = [];
+let lastKey = "";
+const homeTab = () => isStaff() ? "masuk" : "catatan";
+const mainTabs = () => isStaff() ? ["masuk", "laporan", "anggota", "lainnya"] : ["catatan", "revisi"];
 
 /* ---------- Auth ---------- */
 async function login() {
@@ -86,7 +91,7 @@ function fatal(e) {
 
 onAuthStateChanged(auth, async user => {
   unsubProfile && unsubProfile(); unsubs.forEach(f => f()); unsubs = [];
-  profile = null; myTx = []; flagged = []; weekTx = []; people = []; notifs = []; nMine = []; nAll = [];
+  layers = []; profile = null; myTx = []; flagged = []; weekTx = []; people = []; notifs = []; nMine = []; nAll = [];
   if (!user) { renderLogin(); return; }
   $("#app").innerHTML = `<div class="center"><p>Memuat…</p></div>`;
   try {
@@ -149,7 +154,7 @@ async function loadWeek() {
 async function loadPeople() {
   try {
     const snap = await getDocs(collection(db, "users"));
-    const order = { pending: 0, founder: 1, admin: 2, member: 3 };
+    const order = { pending: 0, founder: 1, admin: 2, member: 3, removed: 4 };
     people = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
       .sort((a, b) => (order[a.role] - order[b.role]) || String(a.name).localeCompare(String(b.name)));
   } catch (err) { toast(friendly(err)); }
@@ -158,14 +163,26 @@ async function loadPeople() {
 async function loadFeed() {
   feedLoading = true; render();
   try {
-    const snap = await getDocs(query(collection(db, "audit"), orderBy("at", "desc"), limit(100)));
-    auditFeed = snap.docs.map(d => d.data());
-  } catch (err) { toast(friendly(err)); auditFeed = []; }
+    const a = await getDocs(query(collection(db, "audit"), orderBy("at", "desc"), limit(100)));
+    auditFeed = a.docs.map(d => d.data());
+    const r = await getDocs(query(collection(db, "roleLog"), orderBy("at", "desc"), limit(50)));
+    roleLogs = r.docs.map(d => d.data());
+  } catch (err) { toast(friendly(err)); auditFeed = []; roleLogs = []; }
   feedLoading = false; render();
 }
-async function setRole(uid, role) {
-  try { await updateDoc(doc(db, "users", uid), { role }); toast("Peran diperbarui."); await loadPeople(); }
-  catch (e) { toast(friendly(e)); }
+async function setRole(uid, to) {
+  const p = people.find(x => x.uid === uid); if (!p) return;
+  const from = p.role; if (from === to) return;
+  const action = to === "removed" ? "remove" : from === "removed" ? "restore" : to === "admin" ? "promote" : (from === "admin" ? "demote" : "approve");
+  const rid = doc(collection(db, "roleLog")).id;
+  try {
+    const b = writeBatch(db);
+    b.update(doc(db, "users", uid), { role: to, roleLogId: rid });
+    b.set(doc(db, "roleLog", rid), { targetUid: uid, targetName: p.name || "", action, from, to, actorUid: profile.uid, actorName: profile.name, actorRole: profile.role, at: serverTimestamp() });
+    await b.commit();
+    toast("Peran diperbarui dan tercatat.");
+  } catch (e) { toast(friendly(e)); }
+  await loadPeople();
 }
 const findTx = id => [...flagged, ...myTx, ...weekTx].find(t => t.id === id);
 
@@ -202,21 +219,58 @@ function render() {
       <p>Akunmu sudah terdaftar. Admin akan menyetujui sebelum kamu bisa mencatat. Halaman ini berubah otomatis setelah disetujui.</p></div></div>`;
     return;
   }
+  if (profile.role === "removed") {
+    $("#app").innerHTML = `<div class="wrap">${header()}
+      <div class="center" style="min-height:60vh"><h1 style="font-size:20px">Akun dinonaktifkan</h1>
+      <p>Kamu dikeluarkan dari tim oleh founder, jadi tidak bisa mencatat lagi. Data yang sudah kamu catat tetap tersimpan. Hubungi founder kalau ini keliru.</p></div></div>`;
+    return;
+  }
   const staff = isStaff();
   const views = { catatan: viewCatatan, revisi: viewRevisi, masuk: viewMasuk, laporan: viewLaporan,
-    anggota: viewAnggota, lainnya: viewLainnya, riwayat: viewRiwayat, notif: viewNotif };
+    anggota: viewAnggota, lainnya: viewLainnya, riwayat: viewRiwayat, notif: viewNotif, pengumuman: viewPengumuman };
   const openMine = myTx.filter(t => t.flagStatus === "open").length;
   const toReview = flagged.filter(t => t.flagStatus === "open" || t.flagStatus === "fixed").length;
   const items = staff
     ? [["masuk", "Data masuk"], ["laporan", "Laporan" + badge(toReview)], ["anggota", "Anggota"], ["lainnya", "Lainnya"]]
     : [["catatan", "Catatan"], ["revisi", "Revisi" + badge(openMine)]];
-  const on = t => staff ? (tab === t || (t === "lainnya" && ["catatan", "riwayat"].includes(tab))) : tab === t;
+  const on = t => staff ? (tab === t || (t === "lainnya" && ["catatan", "riwayat", "pengumuman"].includes(tab))) : tab === t;
   const nav = `<nav class="bar"><div class="in">${items.map(([t, l]) =>
     `<button data-act="tab" data-tab="${t}" class="${on(t) ? "on" : ""}">${l}</button>`).join("")}</div></nav>`;
   const fab = tab === "catatan" ? `<button class="fab" data-act="add" style="bottom:calc(76px + env(safe-area-inset-bottom))">+ Catat transaksi</button>` : "";
-  $("#app").innerHTML = `<div class="wrap">${header()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
+  const key = [tab, drill ? drill.type + drill.cat : "", weekOffset, weekLoading ? "L" : "D", feedLoading ? "L" : "D"].join("|");
+  const animate = key !== lastKey; lastKey = key;
+  $("#app").innerHTML = `<div class="wrap ${animate ? "enter" : ""}">${header()}${backBar()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
   Object.entries(keep).forEach(([id, v]) => { const e = document.getElementById(id); if (e) e.value = v; });
 }
+
+const backBar = () => mainTabs().includes(tab) ? "" :
+  `<button class="ghost small" data-act="back" style="margin-bottom:12px">← Kembali</button>`;
+
+/* ---------- Navigasi (tombol kembali + tombol back HP) ---------- */
+function goTab(t) {
+  const secondary = !mainTabs().includes(t);
+  if (secondary && t === tab) return;
+  if (secondary) { layers.push({ type: "tab", from: tab }); history.pushState({ l: layers.length }, ""); }
+  else layers = [];
+  tab = t;
+  if (t === "notif") {
+    seenAtOpen = ms(profile.lastSeen) || 0;
+    updateDoc(doc(db, "users", profile.uid), { lastSeen: serverTimestamp() }).catch(() => {});
+  }
+  render(); window.scrollTo(0, 0);
+  if (t === "masuk") loadWeek();
+  if (t === "anggota") loadPeople();
+  if (t === "riwayat") loadFeed();
+}
+function goBack() {
+  if (layers.length) history.back();
+  else { drill = null; tab = homeTab(); render(); }
+}
+window.addEventListener("popstate", () => {
+  const l = layers.pop(); if (!l) return;
+  if (l.type === "drill") drill = null; else tab = l.from;
+  render(); window.scrollTo(0, 0);
+});
 
 /* ---------- Baris transaksi ---------- */
 function txRow(t, o = {}) {
@@ -336,26 +390,32 @@ function viewLaporan() {
 }
 
 function viewAnggota() {
-  if (!people.length) return `<h2>Anggota</h2><div class="empty">Memuat daftar anggota…</div>`;
+  if (!people.length) return `<h2 style="margin-top:4px">Anggota</h2><div class="empty">Memuat daftar anggota…</div>`;
   const pend = people.filter(p => p.role === "pending");
-  const rest = people.filter(p => p.role !== "pending");
+  const rest = people.filter(p => ["member", "admin", "founder"].includes(p.role));
+  const gone = people.filter(p => p.role === "removed");
+  const isF = profile.role === "founder";
   const av = p => p.photo ? `<img src="${esc(p.photo)}" alt="" referrerpolicy="no-referrer">` : `<div class="av">${esc((p.name || "?")[0].toUpperCase())}</div>`;
   const row = (p, action) => `<div class="person">${av(p)}<div class="t"><b>${esc(p.name)}</b><span>${esc(p.email)}</span></div>${action}</div>`;
+  const pill = p => `<span class="pill ${p.role}">${ROLE_LABEL[p.role]}</span>`;
   const roleCtl = p => {
-    if (p.role === "founder" || p.uid === profile.uid) return `<span class="pill ${p.role}">${ROLE_LABEL[p.role]}</span>`;
-    if (profile.role === "founder") return `<select class="month" data-act="setrole" data-uid="${p.uid}" aria-label="Peran ${esc(p.name)}">
-      ${["member", "admin"].map(r => `<option value="${r}" ${p.role === r ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
-    return `<span class="pill ${p.role}">${ROLE_LABEL[p.role]}</span>`;
+    if (p.role === "founder" || p.uid === profile.uid || !isF) return pill(p);
+    return `<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <select class="month" data-act="setrole" data-uid="${p.uid}" aria-label="Peran ${esc(p.name)}">
+        ${["member", "admin"].map(r => `<option value="${r}" ${p.role === r ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>
+      <button class="ghost small" data-act="remove" data-uid="${p.uid}" style="color:var(--out)">Keluarkan</button></div>`;
   };
   return `<h2 style="margin-top:4px">Menunggu persetujuan (${pend.length})</h2>
     <div class="card">${pend.length ? pend.map(p => row(p, `<button class="btn small" data-act="approve" data-uid="${p.uid}">Setujui</button>`)).join("") : `<p class="hint" style="margin:0">Tidak ada pendaftar baru.</p>`}</div>
     <h2>Anggota aktif (${rest.length})</h2>
     <div class="card">${rest.map(p => row(p, roleCtl(p))).join("")}</div>
-    ${profile.role === "founder" ? `<p class="hint">Hanya founder yang bisa mengangkat atau mencopot admin.</p>` : ""}`;
+    ${gone.length ? `<h2>Dikeluarkan (${gone.length})</h2><div class="card">${gone.map(p => row(p, isF ? `<button class="ghost small" data-act="restore" data-uid="${p.uid}">Pulihkan</button>` : pill(p))).join("")}</div>` : ""}
+    ${isF ? `<p class="hint">Hanya founder yang bisa mengangkat, mencopot admin, dan mengeluarkan anggota. Data anggota yang dikeluarkan tetap tersimpan, dan setiap perubahan peran tercatat di Riwayat.</p>` : ""}`;
 }
 
 function viewLainnya() {
   return `<h2 style="margin-top:4px">Lainnya</h2><div class="menu">
+    <button data-act="tab" data-tab="pengumuman">Pengumuman</button>
     <button data-act="tab" data-tab="catatan">Catatan saya</button>
     <button data-act="tab" data-tab="riwayat">Riwayat perubahan (semua)</button></div>`;
 }
@@ -379,19 +439,17 @@ function auditHtml(a, withOwner) {
     ${a.reason ? `<div class="rs">“${esc(a.reason)}”</div>` : ""}${d ? `<div class="df">${d}</div>` : ""}</div>`;
 }
 function viewRiwayat() {
+  const rl = roleLogs.map(l => `<div class="hist"><div class="hd">${fmtDT(l.at)}</div>
+    <div><b>${esc(l.actorName)}</b> (${ROLE_LABEL[l.actorRole] || esc(l.actorRole)}) ${ROLE_ACT[l.action] || esc(l.action)} <b>${esc(l.targetName)}</b></div></div>`).join("");
   return `<h2 style="margin-top:4px">Riwayat perubahan</h2>
     <p class="hint" style="margin:0 0 10px">Catatan ini hanya bisa ditambah, tidak bisa diubah atau dihapus oleh siapa pun lewat aplikasi.</p>`
     + (feedLoading ? `<div class="empty">Memuat…</div>`
-      : auditFeed.length ? auditFeed.map(a => auditHtml(a, true)).join("") : `<div class="empty">Belum ada riwayat.</div>`);
+      : auditFeed.length ? auditFeed.map(a => auditHtml(a, true)).join("") : `<div class="empty">Belum ada riwayat data.</div>`)
+    + `<h2>Perubahan peran dan keanggotaan</h2>`
+    + (feedLoading ? "" : rl || `<div class="empty">Belum ada perubahan peran.</div>`);
 }
 
 function viewNotif() {
-  const compose = profile.role === "founder" ? `<div class="card" style="margin-bottom:14px"><b>Pengumuman untuk semua</b>
-    <label for="an-title">Judul</label><input class="f" id="an-title" maxlength="100">
-    <label for="an-body">Isi (bersifat umum, jangan sebut data atau nama anggota tertentu)</label>
-    <textarea class="f" id="an-body" rows="3" maxlength="300"></textarea>
-    <div class="err" id="an-err"></div>
-    <button class="btn" style="margin-top:6px" data-act="announce">Kirim ke semua</button></div>` : "";
   const list = notifs.map(n => {
     const isNew = n.by !== profile.uid && ms(n.createdAt) && ms(n.createdAt) > seenAtOpen;
     const link = !isStaff() && ["report", "adminfix"].includes(n.type) ? `<button class="ghost small" data-act="tab" data-tab="revisi" style="margin-top:6px">Lihat revisi</button>` : "";
@@ -399,7 +457,21 @@ function viewNotif() {
     return `<div class="notif ${isNew ? "new" : ""}"><b>${esc(n.title)}</b><div>${esc(n.body)}</div>
       <span>${kind ? kind + " · " : ""}${esc(n.byName)} · ${fmtDT(n.createdAt)}</span>${link}</div>`;
   }).join("");
-  return `<h2 style="margin-top:4px">Notifikasi</h2>${compose}${list || `<div class="empty">Belum ada notifikasi.</div>`}`;
+  return `<h2 style="margin-top:4px">Notifikasi</h2>${list || `<div class="empty">Belum ada notifikasi.</div>`}`;
+}
+
+function viewPengumuman() {
+  const sent = notifs.filter(n => n.type === "announce");
+  return `<h2 style="margin-top:4px">Pengumuman</h2>
+    <div class="card" style="margin-bottom:14px"><b>Buat pengumuman untuk semua</b>
+      <label for="an-title">Judul</label><input class="f" id="an-title" maxlength="100">
+      <label for="an-body">Isi (bersifat umum, jangan sebut data atau nama anggota tertentu)</label>
+      <textarea class="f" id="an-body" rows="3" maxlength="300"></textarea>
+      <div class="err" id="an-err"></div>
+      <button class="btn" style="margin-top:6px" data-act="announce">Kirim ke semua</button></div>
+    <h2>Pengumuman terkirim (${sent.length})</h2>
+    ${sent.length ? sent.map(n => `<div class="notif"><b>${esc(n.title)}</b><div>${esc(n.body)}</div>
+      <span>${esc(n.byName)} · ${fmtDT(n.createdAt)}</span></div>`).join("") : `<div class="empty">Belum ada pengumuman.</div>`}`;
 }
 
 /* ---------- Sheet (jendela bawah) ---------- */
@@ -588,19 +660,25 @@ document.addEventListener("click", async e => {
     setType("out"); $("#amount").value = ""; $("#memo").value = ""; $("#date").value = todayStr(); $("#err").textContent = "";
     $("#dlg").showModal(); $("#amount").focus();
   }
-  else if (a === "tab") {
-    tab = el.dataset.tab;
-    if (tab === "notif") { seenAtOpen = ms(profile.lastSeen) || 0; updateDoc(doc(db, "users", profile.uid), { lastSeen: serverTimestamp() }).catch(() => {}); }
-    render(); window.scrollTo(0, 0);
-    if (tab === "masuk") loadWeek();
-    if (tab === "anggota") loadPeople();
-    if (tab === "riwayat") loadFeed();
-  }
+  else if (a === "tab") goTab(el.dataset.tab);
+  else if (a === "back") goBack();
   else if (a === "prevWeek") { weekOffset--; loadWeek(); }
   else if (a === "nextWeek") { if (weekOffset < 0) { weekOffset++; loadWeek(); } }
-  else if (a === "drill") { drill = { type: el.dataset.type, cat: el.dataset.cat }; render(); window.scrollTo(0, 0); }
-  else if (a === "closeDrill") { drill = null; render(); }
+  else if (a === "drill") {
+    drill = { type: el.dataset.type, cat: el.dataset.cat };
+    layers.push({ type: "drill" }); history.pushState({ l: layers.length }, "");
+    render(); window.scrollTo(0, 0);
+  }
+  else if (a === "closeDrill") {
+    if (layers.length && layers[layers.length - 1].type === "drill") history.back();
+    else { drill = null; render(); }
+  }
   else if (a === "approve") setRole(el.dataset.uid, "member");
+  else if (a === "restore") setRole(el.dataset.uid, "member");
+  else if (a === "remove") {
+    const p = people.find(x => x.uid === el.dataset.uid);
+    if (p && confirm(`Keluarkan ${p.name}? Ia tidak bisa mencatat lagi. Datanya tetap tersimpan dan tindakan ini tercatat.`)) setRole(el.dataset.uid, "removed");
+  }
   else if (a === "del") {
     if (!confirm("Hapus transaksi ini?")) return;
     try { await deleteDoc(doc(db, "transactions", id)); toast("Dihapus."); } catch (err) { toast(friendly(err)); }
