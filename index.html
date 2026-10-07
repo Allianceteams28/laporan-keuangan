@@ -81,6 +81,28 @@
   .err{color:var(--out);font-size:13px;min-height:18px;margin-top:8px}
   #toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%;text-align:center}
   #toast.show{opacity:1}
+
+  .pill.open{background:var(--warn-bg);color:var(--warn)}
+  .pill.fixed{background:var(--in-bg);color:var(--in)}
+  .pill.admin_fixed{background:#dfe5ff;color:var(--accent)}
+  .badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:9px;background:var(--out);color:#fff;font-size:11px;line-height:18px;text-align:center}
+  .txc{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden}
+  .txc .tx{border:0;margin:0;border-radius:0}
+  .extra{border-top:1px solid var(--line);padding:10px 12px;font-size:13px;background:#fafbfe;display:grid;gap:4px}
+  .extra .late{color:var(--out);font-weight:600}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .hist{border-left:3px solid var(--line);padding:2px 0 10px 12px;margin-left:4px;font-size:14px}
+  .hist .hd{font-size:12px;color:var(--muted)}
+  .hist .rs{color:var(--muted);font-style:italic}
+  .hist .df{font-size:13px;margin-top:2px}
+  .notif{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
+  .notif.new{border-color:var(--accent);background:#f4f6ff}
+  .notif b{display:block}.notif span{font-size:12px;color:var(--muted)}
+  .menu{display:grid;gap:10px}
+  .menu button{text-align:left;padding:16px;border-radius:14px;border:1px solid var(--line);background:var(--card);font:inherit;font-size:16px;font-weight:600;cursor:pointer;color:var(--ink)}
+  textarea.f{resize:vertical;font-family:inherit}
+  dialog{max-height:92vh;overflow:auto}
+  #toast{top:16px;bottom:auto}
   @media (prefers-reduced-motion:reduce){#toast{transition:none}}
 </style>
 </head>
@@ -108,6 +130,8 @@
   </div>
 </dialog>
 
+
+<dialog id="sheet"><div id="sheetBody"></div></dialog>
 <div id="toast" role="status"></div>
 <script type="module" src="app.js"></script>
 <script>
