@@ -278,7 +278,7 @@ function txRow(t, o = {}) {
   const st = t.flagStatus || "none";
   const dl = deadlineOf(t);
   const passed = !!dl && Date.now() > dl.getTime();
-  const canDel = o.del && st === "none" && (t.pending || (ms(t.createdAt) && Date.now() - ms(t.createdAt) < 3600e3));
+  const canDel = o.del && st !== "open";
   const main = `<div class="tx ${t.type}"><div class="dot">${t.type === "in" ? "+" : "−"}</div>
     <div class="t"><b>${esc(o.showName ? t.name : t.category)}</b>
       <span>${esc(o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : t.memo)}</span></div>
@@ -327,7 +327,8 @@ function viewCatatan() {
       <div class="o"><small>Pengeluaran</small><b>${rp(outT)}</b></div></div></section>
     <h2>Transaksi</h2>
     ${cur.length ? list : `<div class="empty">Belum ada transaksi di ${monthLabel(month)}.<br>Ketuk “Catat transaksi” untuk mulai.</div>`}
-    ${cur.length ? `<p class="hint">Transaksi bisa dihapus dalam 1 jam setelah dicatat. Setelah itu tercatat permanen, dan koreksi hanya lewat laporan revisi.</p>` : ""}`;
+    ${cur.length ? `<p class="hint">Transaksi bisa dihapus kapan saja, kecuali yang sedang perlu revisi.</p>` : ""}
+    ${myTx.length ? `<div style="margin-top:18px;text-align:center"><button class="ghost small" data-act="clear" style="color:var(--out)">Hapus riwayat…</button></div>` : ""}`;
 }
 
 function viewRevisi() {
@@ -542,6 +543,51 @@ async function showHistory(id) {
   } catch (e) { $("#hist").textContent = friendly(e); }
 }
 
+/* ---------- Hapus riwayat catatan ---------- */
+function clearTargets() {
+  const all = $("#cl-mode").value === "all";
+  const from = $("#cl-from").value, to = $("#cl-to").value;
+  const scope = myTx.filter(t => all || (from && to && t.date >= from && t.date <= to));
+  return { all, from, to, del: scope.filter(t => t.flagStatus !== "open"), blocked: scope.filter(t => t.flagStatus === "open") };
+}
+function updateClear() {
+  const c = clearTargets();
+  $("#cl-range").style.display = c.all ? "none" : "";
+  $("#cl-preview").innerHTML = `<b>${c.del.length} transaksi</b> akan dihapus.` +
+    (c.blocked.length ? `<br>${c.blocked.length} transaksi tidak ikut dihapus karena masih perlu revisi.` : "");
+}
+function sheetClear() {
+  const first = myTx.map(t => t.date).sort()[0] || todayStr();
+  openSheet(`<h2 style="margin:0">Hapus riwayat catatan</h2>
+    <p class="hint">Dihapus permanen dan tidak bisa dikembalikan. Admin juga tidak bisa melihatnya lagi.</p>
+    <label for="cl-mode">Yang dihapus</label>
+    <select class="f" id="cl-mode"><option value="range">Rentang waktu tertentu</option><option value="all">Semua riwayat</option></select>
+    <div id="cl-range"><label for="cl-from">Dari tanggal</label><input class="f" type="date" id="cl-from" value="${first}">
+    <label for="cl-to">Sampai tanggal</label><input class="f" type="date" id="cl-to" value="${todayStr()}"></div>
+    <div class="card" id="cl-preview" style="margin-top:12px"></div>
+    <label for="cl-confirm">Ketik HAPUS untuk melanjutkan</label>
+    <input class="f" id="cl-confirm" autocomplete="off" autocapitalize="characters">
+    ${sheetButtons("doClear", "", "Hapus permanen")}`);
+  updateClear();
+}
+async function doClear(btn) {
+  const c = clearTargets();
+  if (!c.all && (!c.from || !c.to || c.from > c.to)) return sheetErr("Tanggal awal harus sebelum tanggal akhir.");
+  if (!c.del.length) return sheetErr("Tidak ada transaksi yang cocok.");
+  if ($("#cl-confirm").value.trim().toUpperCase() !== "HAPUS") return sheetErr("Ketik HAPUS dulu.");
+  btn.disabled = true;
+  try {
+    for (let i = 0; i < c.del.length; i += 200) {
+      const b = writeBatch(db);
+      c.del.slice(i, i + 200).forEach(t => b.delete(doc(db, "transactions", t.id)));
+      await b.commit();
+    }
+    closeSheet(); toast(`${c.del.length} transaksi dihapus.`);
+    if (isStaff()) loadWeek();
+  } catch (e) { sheetErr(friendly(e)); }
+  btn.disabled = false;
+}
+
 /* ---------- Aksi tulis (satu paket: data + riwayat + notifikasi) ---------- */
 function auditBase(t, action, reason, before, after, aid) {
   return {
@@ -689,6 +735,8 @@ document.addEventListener("click", async e => {
   else if (a === "extend") { const t = findTx(id); t && sheetExtend(t); }
   else if (a === "history") showHistory(id);
   else if (a === "closeSheet") closeSheet();
+  else if (a === "clear") sheetClear();
+  else if (a === "doClear") doClear(el);
   else if (a === "doFlag") doFlag(id, el);
   else if (a === "doExtend") doExtend(id, el);
   else if (a === "doRespond") doRespond(id, el);
@@ -698,5 +746,6 @@ document.addEventListener("click", async e => {
 document.addEventListener("change", e => {
   if (e.target.id === "month") { month = e.target.value; render(); }
   else if (e.target.dataset.act === "setrole") setRole(e.target.dataset.uid, e.target.value);
+  else if (["cl-mode", "cl-from", "cl-to"].includes(e.target.id)) updateClear();
   else if (e.target.id === "sf-type") $("#sf-cat").innerHTML = catOptions(e.target.value, "");
 });
