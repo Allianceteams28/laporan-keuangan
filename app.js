@@ -66,7 +66,7 @@ let profile = null, unsubProfile = null, unsubs = [];
 let tab = "catatan", myTx = [], flagged = [], nMine = [], nAll = [], notifs = [];
 let month = todayStr().slice(0, 7);
 let weekOffset = 0, weekTx = [], weekLoading = false, drill = null;
-let people = [], auditFeed = [], roleLogs = [], feedLoading = false, seenAtOpen = 0;
+let people = [], auditFeed = [], roleLogs = [], purgeLogs = [], feedLoading = false, seenAtOpen = 0;
 let txType = "out";
 let layers = [];
 let lastKey = "";
@@ -167,7 +167,9 @@ async function loadFeed() {
     auditFeed = a.docs.map(d => d.data());
     const r = await getDocs(query(collection(db, "roleLog"), orderBy("at", "desc"), limit(50)));
     roleLogs = r.docs.map(d => d.data());
-  } catch (err) { toast(friendly(err)); auditFeed = []; roleLogs = []; }
+    const pg = await getDocs(query(collection(db, "purgeLog"), orderBy("at", "desc"), limit(30)));
+    purgeLogs = pg.docs.map(d => d.data());
+  } catch (err) { toast(friendly(err)); auditFeed = []; roleLogs = []; purgeLogs = []; }
   feedLoading = false; render();
 }
 async function setRole(uid, to) {
@@ -278,12 +280,11 @@ function txRow(t, o = {}) {
   const st = t.flagStatus || "none";
   const dl = deadlineOf(t);
   const passed = !!dl && Date.now() > dl.getTime();
-  const canDel = o.del && st !== "open";
   const main = `<div class="tx ${t.type}"><div class="dot">${t.type === "in" ? "+" : "−"}</div>
     <div class="t"><b>${esc(o.showName ? t.name : t.category)}</b>
       <span>${esc(o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : t.memo)}</span></div>
     <div class="amt">${t.type === "in" ? "+" : "-"}${rp(t.amount)}</div>
-    ${canDel ? `<button class="del" data-act="del" data-id="${t.id}" aria-label="Hapus transaksi">×</button>` : ""}</div>`;
+</div>`;
 
   let info = "";
   if (st !== "none") {
@@ -327,8 +328,8 @@ function viewCatatan() {
       <div class="o"><small>Pengeluaran</small><b>${rp(outT)}</b></div></div></section>
     <h2>Transaksi</h2>
     ${cur.length ? list : `<div class="empty">Belum ada transaksi di ${monthLabel(month)}.<br>Ketuk “Catat transaksi” untuk mulai.</div>`}
-    ${cur.length ? `<p class="hint">Transaksi bisa dihapus kapan saja, kecuali yang sedang perlu revisi.</p>` : ""}
-    ${myTx.length ? `<div style="margin-top:18px;text-align:center"><button class="ghost small" data-act="clear" style="color:var(--out)">Hapus riwayat…</button></div>` : ""}`;
+    ${cur.length ? `<p class="hint">Hanya founder yang dapat menghapus riwayat transaksi.</p>` : ""}
+`;
 }
 
 function viewRevisi() {
@@ -418,7 +419,8 @@ function viewLainnya() {
   return `<h2 style="margin-top:4px">Lainnya</h2><div class="menu">
     <button data-act="tab" data-tab="pengumuman">Pengumuman</button>
     <button data-act="tab" data-tab="catatan">Catatan saya</button>
-    <button data-act="tab" data-tab="riwayat">Riwayat perubahan (semua)</button></div>`;
+    <button data-act="tab" data-tab="riwayat">Riwayat perubahan (semua)</button>
+    ${profile.role === "founder" ? `<button data-act="clear" style="color:var(--out)">Hapus riwayat</button>` : ""}</div>`;
 }
 
 function diffText(a) {
@@ -447,7 +449,11 @@ function viewRiwayat() {
     + (feedLoading ? `<div class="empty">Memuat…</div>`
       : auditFeed.length ? auditFeed.map(a => auditHtml(a, true)).join("") : `<div class="empty">Belum ada riwayat data.</div>`)
     + `<h2>Perubahan peran dan keanggotaan</h2>`
-    + (feedLoading ? "" : rl || `<div class="empty">Belum ada perubahan peran.</div>`);
+    + (feedLoading ? "" : rl || `<div class="empty">Belum ada perubahan peran.</div>`)
+    + `<h2>Penghapusan riwayat</h2>`
+    + (feedLoading ? "" : purgeLogs.length ? purgeLogs.map(l => `<div class="hist"><div class="hd">${fmtDT(l.at)}</div>
+      <div><b>${esc(l.actorName)}</b> (Founder) menghapus <b>${esc(l.count)} transaksi</b> milik ${esc(l.target)} · ${l.scope === "all" ? "semua riwayat" : esc(l.from) + " s/d " + esc(l.to)}</div></div>`).join("")
+      : `<div class="empty">Belum ada penghapusan.</div>`);
 }
 
 function viewNotif() {
@@ -543,23 +549,30 @@ async function showHistory(id) {
   } catch (e) { $("#hist").textContent = friendly(e); }
 }
 
-/* ---------- Hapus riwayat catatan ---------- */
+/* ---------- Hapus riwayat (khusus founder) ---------- */
+let clearPool = [];
 function clearTargets() {
-  const all = $("#cl-mode").value === "all";
+  const all = $("#cl-mode").value === "all", who = $("#cl-who").value;
   const from = $("#cl-from").value, to = $("#cl-to").value;
-  const scope = myTx.filter(t => all || (from && to && t.date >= from && t.date <= to));
-  return { all, from, to, del: scope.filter(t => t.flagStatus !== "open"), blocked: scope.filter(t => t.flagStatus === "open") };
+  const del = clearPool.filter(t => (!who || t.uid === who) && (all || (from && to && t.date >= from && t.date <= to)));
+  return { all, who, from, to, del };
 }
 function updateClear() {
   const c = clearTargets();
   $("#cl-range").style.display = c.all ? "none" : "";
-  $("#cl-preview").innerHTML = `<b>${c.del.length} transaksi</b> akan dihapus.` +
-    (c.blocked.length ? `<br>${c.blocked.length} transaksi tidak ikut dihapus karena masih perlu revisi.` : "");
+  $("#cl-preview").innerHTML = `<b>${c.del.length} transaksi</b> akan dihapus.`;
 }
-function sheetClear() {
-  const first = myTx.map(t => t.date).sort()[0] || todayStr();
-  openSheet(`<h2 style="margin:0">Hapus riwayat catatan</h2>
-    <p class="hint">Dihapus permanen dan tidak bisa dikembalikan. Admin juga tidak bisa melihatnya lagi.</p>
+async function sheetClear() {
+  const closeBtn = `<div class="actions" style="grid-template-columns:1fr"><button class="btn light" data-act="closeSheet">Tutup</button></div>`;
+  openSheet(`<h2 style="margin:0">Hapus riwayat</h2><p class="hint">Memuat data…</p>`);
+  try { const sn = await getDocs(collection(db, "transactions")); clearPool = sn.docs.map(mapDoc); }
+  catch (e) { openSheet(`<h2 style="margin:0">Hapus riwayat</h2><p class="hint">${esc(friendly(e))}</p>${closeBtn}`); return; }
+  const members = [...new Map(clearPool.map(t => [t.uid, t.name])).entries()];
+  const first = clearPool.map(t => t.date).sort()[0] || todayStr();
+  openSheet(`<h2 style="margin:0">Hapus riwayat</h2>
+    <p class="hint">Dihapus permanen dan tidak bisa dikembalikan. Penghapusan ini tercatat di Riwayat.</p>
+    <label for="cl-who">Milik siapa</label>
+    <select class="f" id="cl-who"><option value="">Semua anggota</option>${members.map(([u, n]) => `<option value="${esc(u)}">${esc(n)}</option>`).join("")}</select>
     <label for="cl-mode">Yang dihapus</label>
     <select class="f" id="cl-mode"><option value="range">Rentang waktu tertentu</option><option value="all">Semua riwayat</option></select>
     <div id="cl-range"><label for="cl-from">Dari tanggal</label><input class="f" type="date" id="cl-from" value="${first}">
@@ -575,15 +588,20 @@ async function doClear(btn) {
   if (!c.all && (!c.from || !c.to || c.from > c.to)) return sheetErr("Tanggal awal harus sebelum tanggal akhir.");
   if (!c.del.length) return sheetErr("Tidak ada transaksi yang cocok.");
   if ($("#cl-confirm").value.trim().toUpperCase() !== "HAPUS") return sheetErr("Ketik HAPUS dulu.");
+  const target = c.who ? (clearPool.find(t => t.uid === c.who) || {}).name || "" : "Semua anggota";
   btn.disabled = true;
   try {
-    for (let i = 0; i < c.del.length; i += 200) {
+    for (let i = 0; i < c.del.length; i += 199) {
       const b = writeBatch(db);
-      c.del.slice(i, i + 200).forEach(t => b.delete(doc(db, "transactions", t.id)));
+      if (i === 0) b.set(doc(collection(db, "purgeLog")), {
+        actorUid: profile.uid, actorName: profile.name, scope: c.all ? "all" : "range", target,
+        from: c.all ? "" : c.from, to: c.all ? "" : c.to, count: c.del.length, at: serverTimestamp()
+      });
+      c.del.slice(i, i + 199).forEach(t => b.delete(doc(db, "transactions", t.id)));
       await b.commit();
     }
-    closeSheet(); toast(`${c.del.length} transaksi dihapus.`);
-    if (isStaff()) loadWeek();
+    closeSheet(); toast(`${c.del.length} transaksi dihapus.`); clearPool = [];
+    loadWeek();
   } catch (e) { sheetErr(friendly(e)); }
   btn.disabled = false;
 }
@@ -725,10 +743,6 @@ document.addEventListener("click", async e => {
     const p = people.find(x => x.uid === el.dataset.uid);
     if (p && confirm(`Keluarkan ${p.name}? Ia tidak bisa mencatat lagi. Datanya tetap tersimpan dan tindakan ini tercatat.`)) setRole(el.dataset.uid, "removed");
   }
-  else if (a === "del") {
-    if (!confirm("Hapus transaksi ini?")) return;
-    try { await deleteDoc(doc(db, "transactions", id)); toast("Dihapus."); } catch (err) { toast(friendly(err)); }
-  }
   else if (a === "flag") { const t = findTx(id); t && sheetFlag(t); }
   else if (a === "respond") { const t = findTx(id); t && sheetRespond(t); }
   else if (a === "adminfix") { const t = findTx(id); t && sheetAdminFix(t); }
@@ -746,6 +760,6 @@ document.addEventListener("click", async e => {
 document.addEventListener("change", e => {
   if (e.target.id === "month") { month = e.target.value; render(); }
   else if (e.target.dataset.act === "setrole") setRole(e.target.dataset.uid, e.target.value);
-  else if (["cl-mode", "cl-from", "cl-to"].includes(e.target.id)) updateClear();
+  else if (["cl-who", "cl-mode", "cl-from", "cl-to"].includes(e.target.id)) updateClear();
   else if (e.target.id === "sf-type") $("#sf-cat").innerHTML = catOptions(e.target.value, "");
 });
