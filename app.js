@@ -5,7 +5,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc, writeBatch,
-  collection, query, where, orderBy, limit, getDocs, onSnapshot, serverTimestamp, Timestamp
+  collection, query, where, orderBy, limit, getDocs, getDocFromCache, onSnapshot, serverTimestamp, Timestamp,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -59,7 +60,11 @@ const onErr = e => toast(friendly(e));
 /* ---------- Firebase ---------- */
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// Cache lokal: data tetap terbaca offline, dan tulisan offline dikirim otomatis saat online.
+let db;
+try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+catch (e) { db = getFirestore(app); }
+const offlineMsg = "Butuh koneksi internet untuk tindakan ini.";
 
 /* ---------- State ---------- */
 let profile = null, unsubProfile = null, unsubs = [];
@@ -84,7 +89,7 @@ async function login() {
     } else if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") toast(friendly(e));
   }
 }
-getRedirectResult(auth).catch(onErr);
+getRedirectResult(auth).catch(e => { if (e.code !== "auth/network-request-failed") onErr(e); });
 
 function fatal(e) {
   $("#app").innerHTML = `<div class="center"><h1>Gagal memuat</h1><p>${esc(friendly(e))}</p><button class="btn" data-act="logout">Keluar</button></div>`;
@@ -97,8 +102,11 @@ onAuthStateChanged(auth, async user => {
   $("#app").innerHTML = `<div class="center"><p>Memuat…</p></div>`;
   try {
     const ref = doc(db, "users", user.uid);
-    const snap = await getDoc(ref);
+    let snap;
+    try { snap = await getDoc(ref); }
+    catch (e) { try { snap = await getDocFromCache(ref); } catch (e2) { throw e; } }
     if (!snap.exists()) {
+      if (!navigator.onLine) throw { code: "unavailable" };
       const isF = user.email === FOUNDER_EMAIL && user.emailVerified;
       await setDoc(ref, {
         name: user.displayName || user.email, email: user.email, photo: user.photoURL || "",
@@ -126,6 +134,7 @@ function startData() {
   tab = isStaff() ? "masuk" : "catatan";
   const uid = profile.uid;
   unsubs.push(onSnapshot(query(collection(db, "transactions"), where("uid", "==", uid)),
+    { includeMetadataChanges: true },
     s => { myTx = s.docs.map(mapDoc); render(); }, onErr));
   unsubs.push(onSnapshot(query(collection(db, "notifications"), where("toUid", "==", uid)),
     s => { nMine = s.docs.map(mapDoc); mergeN(); }, onErr));
@@ -174,6 +183,7 @@ async function loadFeed() {
   feedLoading = false; render();
 }
 async function setRole(uid, to) {
+  if (!navigator.onLine) { toast(offlineMsg); return; }
   const p = people.find(x => x.uid === uid); if (!p) return;
   const from = p.role; if (from === to) return;
   const action = to === "removed" ? "remove" : from === "removed" ? "restore" : to === "admin" ? "promote" : (from === "admin" ? "demote" : "approve");
@@ -242,10 +252,12 @@ function render() {
   const fab = tab === "catatan" ? `<button class="fab" data-act="add" style="bottom:calc(76px + env(safe-area-inset-bottom))">+ Catat transaksi</button>` : "";
   const key = [tab, anaMode, drill ? drill.type + drill.cat : "", weekOffset, weekLoading ? "L" : "D", feedLoading ? "L" : "D"].join("|");
   const animate = key !== lastKey; lastKey = key;
-  $("#app").innerHTML = `<div class="wrap ${animate ? "enter" : ""}">${header()}${backBar()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
+  $("#app").innerHTML = `<div class="wrap ${animate ? "enter" : ""}">${header()}${offlineBar()}${backBar()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
   Object.entries(keep).forEach(([id, v]) => { const e = document.getElementById(id); if (e) e.value = v; });
 }
 
+const offlineBar = () => navigator.onLine ? "" :
+  `<div style="background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:12px">Mode offline. Catatan baru disimpan di perangkat dan terkirim otomatis saat online.</div>`;
 const backBar = () => mainTabs().includes(tab) ? "" :
   `<button class="ghost small" data-act="back" style="margin-bottom:12px">← Kembali</button>`;
 
@@ -282,7 +294,7 @@ function txRow(t, o = {}) {
   const dl = deadlineOf(t);
   const passed = !!dl && Date.now() > dl.getTime();
   const main = `<div class="tx ${t.type}"><div class="dot">${t.type === "in" ? "+" : "−"}</div>
-    <div class="t"><b>${esc(o.showName ? t.name : t.category)}</b>
+    <div class="t"><b>${esc(o.showName ? t.name : t.category)}${t.pending ? ' <span class="pill pending" style="animation:fade .3s ease 1.2s both">Menunggu terkirim</span>' : ""}</b>
       <span>${esc(o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : t.memo)}</span></div>
     <div class="amt">${t.type === "in" ? "+" : "-"}${rp(t.amount)}</div>
 </div>`;
@@ -697,6 +709,7 @@ async function doClear(btn) {
   const c = clearTargets();
   if (!c.all && (!c.from || !c.to || c.from > c.to)) return sheetErr("Tanggal awal harus sebelum tanggal akhir.");
   if (!c.del.length) return sheetErr("Tidak ada transaksi yang cocok.");
+  if (!navigator.onLine) return sheetErr(offlineMsg);
   if ($("#cl-confirm").value.trim().toUpperCase() !== "HAPUS") return sheetErr("Ketik HAPUS dulu.");
   const target = c.who ? (clearPool.find(t => t.uid === c.who) || {}).name || "" : "Semua anggota";
   btn.disabled = true;
@@ -729,6 +742,7 @@ function notifBase(toUid, type, title, body, txId) {
 const editStamp = aid => ({ lastEditBy: profile.uid, lastEditByName: profile.name, lastEditRole: profile.role, lastEditAt: serverTimestamp(), lastAuditId: aid });
 
 async function commit(btn, fn, okMsg) {
+  if (!navigator.onLine) { sheetErr(offlineMsg); return; }
   if (btn) btn.disabled = true;
   try { const b = writeBatch(db); await fn(b); await b.commit(); closeSheet(); toast(okMsg); }
   catch (e) { sheetErr(friendly(e)); }
@@ -784,6 +798,7 @@ function doAdminFix(id, btn) {
   }, "Perubahan tersimpan dan tercatat.");
 }
 async function announce() {
+  if (!navigator.onLine) { $("#an-err").textContent = offlineMsg; return; }
   const title = $("#an-title").value.trim(), body = $("#an-body").value.trim();
   const err = $("#an-err");
   if (!title || !body) { err.textContent = "Isi judul dan isi pengumuman."; return; }
@@ -801,21 +816,18 @@ function setType(t) {
 }
 $("#seg").onclick = e => { if (e.target.dataset.t) setType(e.target.dataset.t); };
 $("#cancel").onclick = () => $("#dlg").close();
-$("#save").onclick = async () => {
+$("#save").onclick = () => {
   const amount = +$("#amount").value.replace(/\D/g, "");
   if (!amount) { $("#err").textContent = "Isi jumlah lebih dari 0."; return; }
   if (!$("#date").value) { $("#err").textContent = "Pilih tanggal."; return; }
-  const btn = $("#save"); btn.disabled = true;
-  try {
-    await addDoc(collection(db, "transactions"), {
-      uid: profile.uid, name: profile.name, type: txType, amount,
-      category: $("#cat").value, memo: $("#memo").value.trim(),
-      date: $("#date").value, createdAt: serverTimestamp()
-    });
-    month = $("#date").value.slice(0, 7);
-    $("#dlg").close(); toast("Tersimpan.");
-  } catch (e) { $("#err").textContent = friendly(e); }
-  btn.disabled = false;
+  addDoc(collection(db, "transactions"), {
+    uid: profile.uid, name: profile.name, type: txType, amount,
+    category: $("#cat").value, memo: $("#memo").value.trim(),
+    date: $("#date").value, createdAt: serverTimestamp()
+  }).catch(e => toast(friendly(e)));
+  month = $("#date").value.slice(0, 7);
+  $("#dlg").close();
+  toast(navigator.onLine ? "Tersimpan." : "Tersimpan di perangkat. Terkirim otomatis saat online.");
 };
 
 /* ---------- Event ---------- */
@@ -874,3 +886,6 @@ document.addEventListener("change", e => {
   else if (["cl-who", "cl-mode", "cl-from", "cl-to"].includes(e.target.id)) updateClear();
   else if (e.target.id === "sf-type") $("#sf-cat").innerHTML = catOptions(e.target.value, "");
 });
+
+window.addEventListener("online", () => { toast("Kembali online. Data dikirim otomatis."); render(); });
+window.addEventListener("offline", () => { toast("Kamu sedang offline."); render(); });
