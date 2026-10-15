@@ -1,7 +1,7 @@
 // Service worker: aplikasi tetap bisa dibuka saat offline.
 // Strategi: coba internet dulu (supaya selalu versi terbaru), kalau gagal atau lambat pakai salinan tersimpan.
-const CACHE = "keuangan-v2";
-const SHELL = ["./", "index.html", "app.js", "firebase-config.js", "manifest.webmanifest", "icon.svg"];
+const CACHE = "keuangan-v3";
+const SHELL = ["./", "index.html", "app.js", "firebase-config.js", "manifest.webmanifest", "logo.png", "favicon.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"];
 const SDK = ["app", "auth", "firestore"].map(n => `https://www.gstatic.com/firebasejs/10.12.2/firebase-${n}.js`);
 
 self.addEventListener("install", e => {

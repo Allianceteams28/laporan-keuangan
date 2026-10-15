@@ -13,10 +13,21 @@ import { firebaseConfig } from "./firebase-config.js";
 // Harus sama dengan email founder di firestore.rules
 const FOUNDER_EMAIL = "aljanedbagdady@gmail.com";
 
+const ASSET_LANCAR = ["Saldo tunai", "Rekening tabungan", "Dompet digital", "Investasi cair"];
+const ASSET_TETAP = ["Kendaraan", "Properti", "Investasi jangka panjang"];
+const DEBT_CATS = ["Utang jangka pendek", "Utang jangka panjang"];
 const CATS = {
-  out: ["Makanan", "Transportasi", "Belanja", "Tagihan", "Hiburan", "Kesehatan", "Lainnya"],
-  in: ["Gaji", "Bonus", "Usaha", "Hadiah", "Lainnya"]
+  out: ["Makanan", "Transportasi", "Tagihan", "Cicilan", "Kesehatan", "Belanja", "Hiburan", "Hobi", "Nongkrong", "Lainnya"],
+  in: ["Gaji", "Bonus", "Usaha", "Hadiah", "Lainnya"],
+  asset: [...ASSET_LANCAR, ...ASSET_TETAP],
+  debt: DEBT_CATS
 };
+const TYPE_LABEL = { in: "Pemasukan", out: "Pengeluaran", asset: "Aset", debt: "Utang" };
+const TYPE_DOT = { in: "+", out: "−", asset: "A", debt: "U" };
+const NEED_CATS = ["Makanan", "Transportasi", "Tagihan", "Cicilan", "Kesehatan"];
+const WANT_CATS = ["Belanja", "Hiburan", "Hobi", "Nongkrong"];
+const PALETTE = ["#52E3B1", "#FF8F91", "#101D40", "#6C8BD6", "#F4C95D", "#9B8AE0", "#2FB5A8", "#F29E6D", "#A9B6CE", "#C86B85"];
+const colorAt = i => PALETTE[i % PALETTE.length];
 const ROLE_LABEL = { pending: "Menunggu", member: "Anggota", admin: "Admin", founder: "Founder", removed: "Dikeluarkan" };
 const ROLE_ACT = { approve: "menyetujui", promote: "mengangkat jadi admin", demote: "mencopot dari admin", remove: "mengeluarkan", restore: "memulihkan" };
 const STATUS_LABEL = { open: "Perlu revisi", fixed: "Sudah ditanggapi", admin_fixed: "Diubah admin" };
@@ -75,7 +86,9 @@ let people = [], auditFeed = [], roleLogs = [], purgeLogs = [], feedLoading = fa
 let txType = "out";
 let layers = [];
 let lastKey = "";
-let anaMode = "bulan";
+let dataReady = false, budgets = {};
+let anaPeriod = "bulan", anaView = "out", anaSel = -1;
+let anaFrom = todayStr().slice(0, 8) + "01", anaTo = todayStr();
 const homeTab = () => isStaff() ? "masuk" : "catatan";
 const mainTabs = () => isStaff() ? ["masuk", "laporan", "anggota", "lainnya"] : ["catatan", "revisi", "analisis"];
 
@@ -91,15 +104,28 @@ async function login() {
 }
 getRedirectResult(auth).catch(e => { if (e.code !== "auth/network-request-failed") onErr(e); });
 
+const sleep = n => new Promise(r => setTimeout(r, n));
+const splash = () => `<div class="splash"><img src="logo.png" alt="" width="88" height="88"><div class="st">Laporan Keuangan</div>
+  <div class="dots" role="status" aria-label="Memuat"><span></span><span></span><span></span></div></div>`;
+const skRow = () => `<div class="sk-row"><div class="sk" style="width:36px;height:36px;border-radius:50%"></div>
+  <div style="flex:1;display:grid;gap:7px"><div class="sk line" style="width:55%"></div><div class="sk line" style="width:35%;height:11px"></div></div>
+  <div class="sk" style="width:74px;height:26px;border-radius:8px"></div></div>`;
+const skeleton = () => `<div class="sk" style="height:34px;width:60%;margin-bottom:14px"></div>
+  <div class="sk" style="height:150px;border-radius:18px"></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 18px">
+    <div class="sk" style="height:66px"></div><div class="sk" style="height:66px"></div><div class="sk" style="height:66px"></div></div>
+  ${skRow()}${skRow()}${skRow()}`;
+const skList = n => Array.from({ length: n }, skRow).join("");
 function fatal(e) {
   $("#app").innerHTML = `<div class="center"><h1>Gagal memuat</h1><p>${esc(friendly(e))}</p><button class="btn" data-act="logout">Keluar</button></div>`;
 }
 
 onAuthStateChanged(auth, async user => {
   unsubProfile && unsubProfile(); unsubs.forEach(f => f()); unsubs = [];
-  layers = []; profile = null; myTx = []; flagged = []; weekTx = []; people = []; notifs = []; nMine = []; nAll = [];
+  layers = []; dataReady = false; budgets = {}; profile = null; myTx = []; flagged = []; weekTx = []; people = []; notifs = []; nMine = []; nAll = [];
   if (!user) { renderLogin(); return; }
-  $("#app").innerHTML = `<div class="center"><p>Memuat…</p></div>`;
+  $("#app").innerHTML = splash();
+  const t0 = Date.now();
   try {
     const ref = doc(db, "users", user.uid);
     let snap;
@@ -113,6 +139,7 @@ onAuthStateChanged(auth, async user => {
         role: isF ? "founder" : "pending", createdAt: serverTimestamp()
       });
     }
+    const wait = 1100 - (Date.now() - t0); if (wait > 0) await sleep(wait);
     unsubProfile = onSnapshot(ref, s => {
       if (!s.exists()) return;
       const prev = profile && profile.role;
@@ -129,13 +156,16 @@ function mergeN() {
 }
 function startData() {
   unsubs.forEach(f => f()); unsubs = [];
-  myTx = []; flagged = []; nMine = []; nAll = []; notifs = [];
+  myTx = []; flagged = []; nMine = []; nAll = []; notifs = []; budgets = {}; dataReady = false;
   if (!isActive()) return;
   tab = isStaff() ? "masuk" : "catatan";
   const uid = profile.uid;
+  setTimeout(() => { if (!dataReady) { dataReady = true; render(); } }, 6000);
   unsubs.push(onSnapshot(query(collection(db, "transactions"), where("uid", "==", uid)),
     { includeMetadataChanges: true },
-    s => { myTx = s.docs.map(mapDoc); render(); }, onErr));
+    s => { myTx = s.docs.map(mapDoc); dataReady = true; render(); }, e => { dataReady = true; onErr(e); }));
+  unsubs.push(onSnapshot(query(collection(db, "budgets"), where("uid", "==", uid)),
+    s => { budgets = {}; s.docs.forEach(d => { const x = d.data(); budgets[x.month] = x; }); render(); }, onErr));
   unsubs.push(onSnapshot(query(collection(db, "notifications"), where("toUid", "==", uid)),
     s => { nMine = s.docs.map(mapDoc); mergeN(); }, onErr));
   unsubs.push(onSnapshot(query(collection(db, "notifications"), where("toUid", "==", "all")),
@@ -202,6 +232,7 @@ const findTx = id => [...flagged, ...myTx, ...weekTx].find(t => t.id === id);
 /* ---------- Render ---------- */
 function renderLogin() {
   $("#app").innerHTML = `<div class="center">
+    <img class="login-logo" src="logo.png" alt="" width="96" height="96">
     <h1 style="font-size:24px">Laporan Keuangan Tim</h1>
     <p>Masuk dengan akun Google untuk mencatat dan melaporkan keuangan.</p>
     <button class="btn" data-act="login">Masuk dengan Google</button></div>`;
@@ -212,13 +243,13 @@ function unreadCount() {
 }
 const badge = n => n ? `<span class="badge">${n}</span>` : "";
 
+const logoImg = n => `<img src="logo.png" alt="" width="${n}" height="${n}" style="border-radius:${Math.round(n * .24)}px">`;
 function header() {
-  return `<header class="top">
-    <div><h1>Laporan Keuangan</h1>
+  return `<header class="top"><div class="in">${logoImg(38)}
+    <div class="ttl"><h1>Laporan Keuangan</h1>
       <div class="who">${esc(profile.name)} <span class="pill ${profile.role}">${ROLE_LABEL[profile.role]}</span></div></div>
-    <div style="display:flex;gap:6px">
-      ${isActive() ? `<button class="ghost" data-act="tab" data-tab="notif" aria-label="Notifikasi">Notif${badge(unreadCount())}</button>` : ""}
-      <button class="ghost" data-act="logout">Keluar</button></div></header>`;
+    ${isActive() ? `<button class="ghost" data-act="tab" data-tab="notif" aria-label="Notifikasi">Notif${badge(unreadCount())}</button>` : ""}
+    <button class="ghost" data-act="logout">Keluar</button></div></header>`;
 }
 
 function render() {
@@ -227,32 +258,34 @@ function render() {
   ["an-title", "an-body"].forEach(id => { const e = document.getElementById(id); if (e) keep[id] = e.value; });
 
   if (profile.role === "pending") {
-    $("#app").innerHTML = `<div class="wrap">${header()}
+    $("#app").innerHTML = `${header()}<div class="wrap">
       <div class="center" style="min-height:60vh"><h1 style="font-size:20px">Menunggu persetujuan</h1>
       <p>Akunmu sudah terdaftar. Admin akan menyetujui sebelum kamu bisa mencatat. Halaman ini berubah otomatis setelah disetujui.</p></div></div>`;
     return;
   }
   if (profile.role === "removed") {
-    $("#app").innerHTML = `<div class="wrap">${header()}
+    $("#app").innerHTML = `${header()}<div class="wrap">
       <div class="center" style="min-height:60vh"><h1 style="font-size:20px">Akun dinonaktifkan</h1>
       <p>Kamu dikeluarkan dari tim oleh founder, jadi tidak bisa mencatat lagi. Data yang sudah kamu catat tetap tersimpan. Hubungi founder kalau ini keliru.</p></div></div>`;
     return;
   }
+  if (isActive() && !dataReady) { $("#app").innerHTML = `${header()}<div class="wrap">${skeleton()}</div>`; return; }
   const staff = isStaff();
-  const views = { catatan: viewCatatan, revisi: viewRevisi, masuk: viewMasuk, laporan: viewLaporan,
+  const views = { lap_in: viewLapIn, lap_out: viewLapOut, lap_aset: viewLapAset, lap_utang: viewLapUtang, lap_nw: viewLapNW, catatan: viewCatatan, revisi: viewRevisi, masuk: viewMasuk, laporan: viewLaporan,
     anggota: viewAnggota, lainnya: viewLainnya, riwayat: viewRiwayat, notif: viewNotif, pengumuman: viewPengumuman, analisis: viewAnalisis };
   const openMine = myTx.filter(t => t.flagStatus === "open").length;
   const toReview = flagged.filter(t => t.flagStatus === "open" || t.flagStatus === "fixed").length;
   const items = staff
     ? [["masuk", "Data masuk"], ["laporan", "Laporan" + badge(toReview)], ["anggota", "Anggota"], ["lainnya", "Lainnya"]]
     : [["catatan", "Catatan"], ["revisi", "Revisi" + badge(openMine)], ["analisis", "Analisis"]];
-  const on = t => staff ? (tab === t || (t === "lainnya" && ["catatan", "riwayat", "pengumuman", "analisis"].includes(tab))) : tab === t;
+  const on = t => staff ? (tab === t || (t === "lainnya" && ["catatan", "riwayat", "pengumuman", "analisis"].includes(tab) || t === "lainnya" && tab.startsWith("lap_")))
+    : (tab === t || (t === "catatan" && tab.startsWith("lap_")));
   const nav = `<nav class="bar"><div class="in">${items.map(([t, l]) =>
     `<button data-act="tab" data-tab="${t}" class="${on(t) ? "on" : ""}">${l}</button>`).join("")}</div></nav>`;
-  const fab = tab === "catatan" ? `<button class="fab" data-act="add" style="bottom:calc(76px + env(safe-area-inset-bottom))">+ Catat transaksi</button>` : "";
-  const key = [tab, anaMode, drill ? drill.type + drill.cat : "", weekOffset, weekLoading ? "L" : "D", feedLoading ? "L" : "D"].join("|");
+  const fab = tab === "catatan" ? `<button class="fab" data-act="add" style="bottom:calc(76px + env(safe-area-inset-bottom))">+ Buat laporan</button>` : "";
+  const key = [tab, anaPeriod, anaView, drill ? drill.type + drill.cat : "", weekOffset, weekLoading ? "L" : "D", feedLoading ? "L" : "D"].join("|");
   const animate = key !== lastKey; lastKey = key;
-  $("#app").innerHTML = `<div class="wrap ${animate ? "enter" : ""}">${header()}${offlineBar()}${backBar()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
+  $("#app").innerHTML = `${header()}<div class="wrap ${animate ? "enter" : ""}">${offlineBar()}${backBar()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
   Object.entries(keep).forEach(([id, v]) => { const e = document.getElementById(id); if (e) e.value = v; });
 }
 
@@ -293,10 +326,13 @@ function txRow(t, o = {}) {
   const st = t.flagStatus || "none";
   const dl = deadlineOf(t);
   const passed = !!dl && Date.now() > dl.getTime();
-  const main = `<div class="tx ${t.type}"><div class="dot">${t.type === "in" ? "+" : "−"}</div>
-    <div class="t"><b>${esc(o.showName ? t.name : t.category)}${t.pending ? ' <span class="pill pending" style="animation:fade .3s ease 1.2s both">Menunggu terkirim</span>' : ""}</b>
-      <span>${esc(o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : t.memo)}</span></div>
-    <div class="amt">${t.type === "in" ? "+" : "-"}${rp(t.amount)}</div>
+  const flow = t.type === "in" || t.type === "out";
+  const title = o.showName ? t.name : (flow ? t.category : (t.memo || t.category));
+  const sub = o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : (flow ? t.memo : `${t.category} · per ${t.date}`);
+  const main = `<div class="tx ${t.type}"><div class="dot">${TYPE_DOT[t.type] || "?"}</div>
+    <div class="t"><b>${esc(title)}${t.pending ? ' <span class="pill pending" style="animation:fade .3s ease 1.2s both">Menunggu terkirim</span>' : ""}</b>
+      <span>${esc(sub)}</span></div>
+    <div class="amt">${t.type === "in" ? "+" : t.type === "out" ? "-" : ""}${rp(t.amount)}</div>
 </div>`;
 
   let info = "";
@@ -321,28 +357,145 @@ function txRow(t, o = {}) {
 }
 
 /* ---------- Tampilan ---------- */
-function viewCatatan() {
+/* ---------- Pembantu laporan ---------- */
+const rpC = n => {
+  const a = Math.abs(n), sg = n < 0 ? "-" : "", f = (v, u) => `${sg}Rp ${v.toFixed(1).replace(".", ",").replace(",0", "")} ${u}`;
+  if (a >= 1e9) return f(a / 1e9, "M");
+  if (a >= 1e6) return f(a / 1e6, "jt");
+  if (a >= 1e3) return `${sg}Rp ${Math.round(a / 1e3)} rb`;
+  return `${sg}Rp ${Math.round(a)}`;
+};
+const sumAmt = rows => rows.reduce((a, t) => a + t.amount, 0);
+const isFlow = t => t.type === "in" || t.type === "out";
+const byDateDesc = (a, b) => b.date.localeCompare(a.date);
+const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : 0;
+const asOfOf = m => { const [y, mo] = m.split("-"); const end = ymd(new Date(+y, +mo, 0)); return end > todayStr() ? todayStr() : end; };
+const prevMonth = m => { const [y, mo] = m.split("-").map(Number); const d = new Date(y, mo - 2, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
+function positions(kind, asOf) {
+  const m = new Map();
+  myTx.filter(t => t.type === kind && t.date <= asOf)
+    .sort((a, b) => a.date.localeCompare(b.date) || ((ms(a.createdAt) ?? 1e15) - (ms(b.createdAt) ?? 1e15)))
+    .forEach(t => m.set(t.category + "|" + (t.memo || t.category).toLowerCase(), t));
+  return [...m.values()];
+}
+function monthSelect() {
   const months = new Set(myTx.map(t => t.date.slice(0, 7))); months.add(month); months.add(todayStr().slice(0, 7));
-  const opts = [...months].sort().reverse().map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${monthLabel(m)}</option>`).join("");
-  const cur = myTx.filter(t => t.date.startsWith(month)).sort((a, b) => b.date.localeCompare(a.date));
-  const inT = cur.filter(t => t.type === "in").reduce((s, t) => s + t.amount, 0);
-  const outT = cur.filter(t => t.type === "out").reduce((s, t) => s + t.amount, 0);
+  return `<select class="month" id="month" aria-label="Pilih bulan">${[...months].sort().reverse().map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>`;
+}
+const repHead = title => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">${title}</h2>${monthSelect()}</div>`;
+function dayList(rows) {
+  let out = "", last = "";
+  rows.forEach(t => { if (t.date !== last) { last = t.date; out += `<div class="day">${longDay(t.date)}</div>`; } out += txRow(t); });
+  return out;
+}
+
+function viewCatatan() {
+  const cur = myTx.filter(t => isFlow(t) && t.date.startsWith(month)).sort(byDateDesc);
+  const inT = sumAmt(cur.filter(t => t.type === "in")), outT = sumAmt(cur.filter(t => t.type === "out"));
   const bal = inT - outT;
-  let list = "", last = "";
-  cur.forEach(t => {
-    if (t.date !== last) { last = t.date; list += `<div class="day">${longDay(t.date)}</div>`; }
-    list += txRow(t, { del: true });
-  });
+  const asOf = asOfOf(month);
+  const aset = sumAmt(positions("asset", asOf).filter(t => t.amount > 0)), utang = sumAmt(positions("debt", asOf).filter(t => t.amount > 0));
+  const nw = aset - utang;
   return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h2 style="margin:0">Catatan saya</h2><select class="month" id="month" aria-label="Pilih bulan">${opts}</select></div>
+      <h2 style="margin:0">Catatan saya</h2>${monthSelect()}</div>
     <section class="balance"><small>Saldo bulan ini</small>
       <div class="big">${bal < 0 ? "-" : ""}${rp(Math.abs(bal))}</div>
-      <div class="split"><div class="i"><small>Pemasukan</small><b>${rp(inT)}</b></div>
-      <div class="o"><small>Pengeluaran</small><b>${rp(outT)}</b></div></div></section>
+      <div class="split">
+        <button class="i" data-act="tab" data-tab="lap_in"><small>Pemasukan</small><b>${rp(inT)}</b><em>Lihat laporan ›</em></button>
+        <button class="o" data-act="tab" data-tab="lap_out"><small>Pengeluaran</small><b>${rp(outT)}</b><em>Lihat laporan ›</em></button></div></section>
+    <div class="tiles">
+      <button class="tile" data-act="tab" data-tab="lap_aset"><span class="dt" style="background:var(--mint)"></span><small>Aset</small><b>${rpC(aset)}</b></button>
+      <button class="tile" data-act="tab" data-tab="lap_utang"><span class="dt" style="background:var(--coral)"></span><small>Liabilitas</small><b>${rpC(utang)}</b></button>
+      <button class="tile" data-act="tab" data-tab="lap_nw"><span class="dt" style="background:var(--navy)"></span><small>Net worth</small><b>${rpC(nw)}</b></button></div>
     <h2>Transaksi</h2>
-    ${cur.length ? list : `<div class="empty">Belum ada transaksi di ${monthLabel(month)}.<br>Ketuk “Catat transaksi” untuk mulai.</div>`}
+    ${cur.length ? dayList(cur) : `<div class="empty">Belum ada transaksi di ${monthLabel(month)}.<br>Ketuk “Buat laporan” untuk mulai.</div>`}
     ${cur.length ? `<p class="hint">Hanya founder yang dapat menghapus riwayat transaksi.</p>` : ""}
 `;
+}
+
+/* ---------- Laporan arus kas masuk / keluar ---------- */
+function flowReport(type) {
+  const rows = myTx.filter(t => t.type === type && t.date.startsWith(month)).sort(byDateDesc);
+  const total = sumAmt(rows), g = groupDesc(rows, type), max = g.length ? g[0][1] : 1;
+  const title = type === "in" ? "Laporan arus kas masuk" : "Laporan arus kas keluar";
+  let split = "";
+  if (type === "out" && total > 0) {
+    const need = sumAmt(rows.filter(t => NEED_CATS.includes(t.category))), want = sumAmt(rows.filter(t => WANT_CATS.includes(t.category)));
+    const line = (n, v) => `<div class="bud"><div class="r"><span>${n}</span><b>${rp(v)}</b></div><small>${pct(v, total)}% dari pengeluaran</small></div>`;
+    split = `<h2>Kebutuhan dan keinginan</h2><div class="card">${line("Kebutuhan wajib", need)}${line("Keinginan", want)}${line("Lain-lain", total - need - want)}</div>`;
+  }
+  const bars = g.length ? `<div class="card chart ${type}">${g.map(([c, v]) =>
+    `<div class="row" style="cursor:default"><span class="lab">${esc(c)}</span><span class="track"><i style="width:${Math.max(3, v / max * 100)}%"></i></span><span class="val">${rp(v)}</span></div>`).join("")}</div>`
+    : `<div class="empty">Belum ada data di ${monthLabel(month)}.</div>`;
+  return repHead(title) + `<div class="card"><small class="muted">Total ${type === "in" ? "pemasukan" : "pengeluaran"} ${monthLabel(month)}</small>
+      <div class="bignum">${rp(total)}</div><small class="muted">${rows.length} transaksi</small></div>`
+    + `<h2>${type === "in" ? "Per sumber" : "Per kategori"}</h2>${bars}${split}` + (rows.length ? `<h2>Daftar transaksi</h2>${dayList(rows)}` : "");
+}
+const viewLapIn = () => flowReport("in");
+const viewLapOut = () => flowReport("out");
+
+/* ---------- Laporan aset, liabilitas, net worth ---------- */
+function itemRow(t, kind) {
+  return `<div class="txc"><div class="tx ${kind}"><div class="dot">${TYPE_DOT[kind]}</div>
+    <div class="t"><b>${esc(t.memo || t.category)}</b><span>${esc(t.category)} · per ${esc(t.date)}</span></div>
+    <div class="amt">${rp(t.amount)}</div></div>
+    <div class="extra"><div class="btns"><button class="ghost small" data-act="add" data-type="${kind}" data-cat="${esc(t.category)}" data-memo="${esc(t.memo || "")}">Perbarui nilai</button>
+    <button class="ghost small" data-act="history" data-id="${t.id}">Riwayat</button></div></div></div>`;
+}
+function posSection(title, desc, items, kind) {
+  const tot = sumAmt(items);
+  return `<h2 style="margin-bottom:2px">${title}</h2><p class="hint" style="margin:0 0 8px">${desc}</p>
+    <div class="card" style="margin-bottom:10px"><small class="muted">Subtotal</small><div class="bignum" style="font-size:20px">${rp(tot)}</div></div>`
+    + (items.length ? items.map(t => itemRow(t, kind)).join("") : `<div class="empty">Belum ada data.</div>`);
+}
+function viewLapAset() {
+  const asOf = asOfOf(month);
+  const items = positions("asset", asOf).filter(t => t.amount > 0).sort((a, b) => b.amount - a.amount);
+  const lancar = items.filter(t => ASSET_LANCAR.includes(t.category)), tetap = items.filter(t => !ASSET_LANCAR.includes(t.category));
+  return repHead("Laporan aset")
+    + `<div class="card"><small class="muted">Total aset per ${esc(asOf)}</small><div class="bignum">${rp(sumAmt(items))}</div></div>`
+    + `<div style="margin:12px 0"><button class="btn small" data-act="add" data-type="asset">+ Tambah aset</button></div>`
+    + posSection("Aset lancar", "Saldo tunai, rekening tabungan, dompet digital, dan investasi cair (emas, reksa dana pasar uang).", lancar, "asset")
+    + posSection("Aset tetap / tidak lancar", "Kendaraan, properti, atau investasi jangka panjang.", tetap, "asset");
+}
+function viewLapUtang() {
+  const asOf = asOfOf(month);
+  const items = positions("debt", asOf).filter(t => t.amount > 0).sort((a, b) => b.amount - a.amount);
+  const pendek = items.filter(t => t.category === "Utang jangka pendek"), panjang = items.filter(t => t.category !== "Utang jangka pendek");
+  return repHead("Laporan liabilitas")
+    + `<div class="card"><small class="muted">Total sisa cicilan atau pinjaman yang masih harus dibayar, per ${esc(asOf)}</small><div class="bignum">${rp(sumAmt(items))}</div></div>`
+    + `<div style="margin:12px 0"><button class="btn small" data-act="add" data-type="debt">+ Tambah utang</button></div>`
+    + posSection("Utang jangka pendek", "Dibayar dalam waktu dekat, misalnya kartu kredit atau pinjaman singkat.", pendek, "debt")
+    + posSection("Utang jangka panjang", "Cicilan atau pinjaman yang masih lama, misalnya KPR atau kendaraan.", panjang, "debt");
+}
+function viewLapNW() {
+  const now = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1), m = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`, asOf = asOfOf(m);
+    const a = sumAmt(positions("asset", asOf).filter(t => t.amount > 0)), u = sumAmt(positions("debt", asOf).filter(t => t.amount > 0));
+    now.push({ m, a, u, nw: a - u });
+  }
+  const cur = now[now.length - 1], prev = now[now.length - 2], diff = cur.nw - prev.nw;
+  const has = myTx.some(t => t.type === "asset" || t.type === "debt");
+  const head = `<h2 style="margin:4px 0 10px">Laporan net worth</h2>`;
+  if (!has) return head + `<div class="empty">Belum ada data aset atau utang.<br>Tambahkan dulu supaya kekayaan bersihmu bisa dihitung.</div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn small" data-act="add" data-type="asset">+ Tambah aset</button><button class="btn small" data-act="add" data-type="debt">+ Tambah utang</button></div>`;
+  const verdict = diff === 0 ? `Kekayaan bersihmu <b>tidak berubah</b> dibanding akhir bulan lalu.`
+    : diff > 0 ? `Kekayaan bersihmu <b>bertambah ${rp(diff)}</b> dibanding akhir bulan lalu.` : `Kekayaan bersihmu <b>berkurang ${rp(-diff)}</b> dibanding akhir bulan lalu.`;
+  const rows = now.slice().reverse().map((r, i, arr) => {
+    const nxt = arr[i + 1]; const dl = nxt ? r.nw - nxt.nw : null;
+    const arrow = dl === null ? "" : dl > 0 ? `<span style="color:var(--in-ink)">▲ ${rpC(dl)}</span>` : dl < 0 ? `<span style="color:var(--out-ink)">▼ ${rpC(-dl)}</span>` : "–";
+    return `<div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1.1fr;gap:6px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;font-variant-numeric:tabular-nums">
+      <span>${esc(monthLabel(r.m).replace(" 20", " '"))}</span><span>${rpC(r.a)}</span><span>${rpC(r.u)}</span><b>${rpC(r.nw)}</b></div>
+      ${dl !== null ? `<div style="text-align:right;font-size:11px;margin-top:-4px;padding-bottom:4px">${arrow}</div>` : ""}`;
+  }).join("");
+  return head + `<section class="balance"><small>Net worth saat ini (total aset − total utang)</small>
+      <div class="big" style="margin-bottom:10px">${cur.nw < 0 ? "-" : ""}${rp(Math.abs(cur.nw))}</div>
+      <div class="split"><div class="i"><small>Total aset</small><b>${rp(cur.a)}</b></div><div class="o"><small>Total utang</small><b>${rp(cur.u)}</b></div></div></section>
+    <div class="alert ${diff >= 0 ? "ok" : ""}" style="margin-top:12px">${verdict}</div>
+    <h2>Perkembangan 6 bulan</h2><div class="card">
+      <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1.1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)"><span>Bulan</span><span>Aset</span><span>Utang</span><span>Net worth</span></div>${rows}</div>
+    <p class="hint">Tujuan utamanya melihat apakah kekayaan bersih bertambah dari bulan ke bulan.</p>`;
 }
 
 function viewRevisi() {
@@ -374,7 +527,7 @@ function viewMasuk() {
   const outT = rows.filter(t => t.type === "out").reduce((a, t) => a + t.amount, 0);
   const bal = inT - outT;
   let body = "";
-  if (weekLoading) body = `<div class="empty">Memuat data…</div>`;
+  if (weekLoading) body = skList(3);
   else if (drill) {
     const list = rows.filter(t => t.type === drill.type && t.category === drill.cat).sort((a, b) => b.date.localeCompare(a.date));
     body = `<h2>${esc(drill.cat)} · ${drill.type === "in" ? "pemasukan" : "pengeluaran"}</h2>
@@ -405,7 +558,7 @@ function viewLaporan() {
 }
 
 function viewAnggota() {
-  if (!people.length) return `<h2 style="margin-top:4px">Anggota</h2><div class="empty">Memuat daftar anggota…</div>`;
+  if (!people.length) return `<h2 style="margin-top:4px">Anggota</h2>${skList(4)}`;
   const pend = people.filter(p => p.role === "pending");
   const rest = people.filter(p => ["member", "admin", "founder"].includes(p.role));
   const gone = people.filter(p => p.role === "removed");
@@ -429,111 +582,198 @@ function viewAnggota() {
 }
 
 
-/* ---------- Analisis & grafik arus kas (data milik sendiri) ---------- */
-const sumType = (rows, type) => rows.filter(t => t.type === type).reduce((a, t) => a + t.amount, 0);
-const netOf = rows => sumType(rows, "in") - sumType(rows, "out");
-function anaPeriods(mode) {
-  const n = mode === "minggu" ? 8 : 6, now = new Date(), out = [];
-  const dm = d => d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
-  for (let i = n - 1; i >= 0; i--) {
-    let start, end, label, full;
-    if (mode === "minggu") {
-      start = weekStart(now); start.setDate(start.getDate() - 7 * i);
-      end = new Date(start); end.setDate(end.getDate() + 6);
-      label = `${start.getDate()}/${start.getMonth() + 1}`; full = `${dm(start)} – ${dm(end)}`;
-    } else {
-      start = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-      label = start.toLocaleDateString("id-ID", { month: "short" });
-      full = start.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
-    }
-    out.push({ start: ymd(start), end: ymd(end), label, full });
+/* ---------- Analisis ---------- */
+const groupDesc = (rows, type) => group(rows, type).reverse();
+function anaRange() {
+  const now = new Date();
+  if (anaPeriod === "minggu") { const st = weekStart(now), e = new Date(st); e.setDate(e.getDate() + 6); return [ymd(st), ymd(e), "Minggu ini"]; }
+  if (anaPeriod === "custom") return [anaFrom, anaTo, "Rentang kustom"];
+  return [ymd(new Date(now.getFullYear(), now.getMonth(), 1)), ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0)), "Bulan ini"];
+}
+const budgetMonthNow = () => { const to = anaRange()[1]; return (to > todayStr() ? todayStr() : to).slice(0, 7); };
+function anaData() {
+  const [from, to, plabel] = anaRange();
+  const lower = { bulan: "bulan ini", minggu: "minggu ini", custom: "periode ini" }[anaPeriod];
+  const cap = to > todayStr() ? todayStr() : to;
+  const flows = myTx.filter(t => isFlow(t) && t.date >= from && t.date <= to);
+  const inRows = flows.filter(t => t.type === "in"), outRows = flows.filter(t => t.type === "out");
+  const needRows = outRows.filter(t => NEED_CATS.includes(t.category)), wantRows = outRows.filter(t => WANT_CATS.includes(t.category));
+  const otherRows = outRows.filter(t => !NEED_CATS.includes(t.category) && !WANT_CATS.includes(t.category));
+  const inT = sumAmt(inRows), outT = sumAmt(outRows);
+  return { from, to, cap, plabel, lower, inRows, outRows, inT, outT, net: inT - outT,
+    needRows, wantRows, otherRows, needT: sumAmt(needRows), wantT: sumAmt(wantRows), otherT: sumAmt(otherRows) };
+}
+function anaSlices(d) {
+  if (anaView === "out" || anaView === "in") {
+    const rows = anaView === "out" ? d.outRows : d.inRows;
+    return groupDesc(rows, anaView).map(([c, v], i) => ({ label: c, value: v, color: colorAt(i), rows: rows.filter(t => t.category === c) }));
   }
-  return out;
+  if (anaView === "aset" || anaView === "utang") {
+    const items = positions(anaView === "aset" ? "asset" : "debt", d.cap).filter(t => t.amount > 0);
+    const by = {}; items.forEach(t => { by[t.category] = (by[t.category] || 0) + t.amount; });
+    return Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v], i) => ({ label: c, value: v, color: colorAt(i), rows: items.filter(t => t.category === c) }));
+  }
+  const out = [
+    { label: "Kebutuhan wajib", value: d.needT, color: "#101D40", rows: d.needRows },
+    { label: "Keinginan", value: d.wantT, color: "#FF8F91", rows: d.wantRows },
+    { label: "Lain-lain", value: d.otherT, color: "#A9B6CE", rows: d.otherRows }
+  ];
+  if (d.net > 0) out.push({ label: "Sisa / tabungan", value: d.net, color: "#52E3B1", rows: [], note: "Uang masuk yang belum terpakai." });
+  return out.filter(x => x.value > 0);
 }
-function cashSvg(ps, unit) {
-  const W = 320, H = 170, pad = 4, padB = 22, padT = 8, ch = H - padB - padT;
-  const max = Math.max(1, ...ps.flatMap(p => [p.inT, p.outT]));
-  const gw = (W - pad * 2) / ps.length, bw = Math.min(14, gw / 2 - 3);
-  let g = `<line x1="${pad}" x2="${W - pad}" y1="${padT + ch}" y2="${padT + ch}" style="stroke:var(--line)"/>`;
-  ps.forEach((p, i) => {
-    const cx = pad + gw * i + gw / 2, hi = p.inT / max * ch, ho = p.outT / max * ch;
-    g += `<rect x="${cx - bw - 1}" y="${padT + ch - hi}" width="${bw}" height="${hi}" rx="3" style="fill:var(--in)"/>`;
-    g += `<rect x="${cx + 1}" y="${padT + ch - ho}" width="${bw}" height="${ho}" rx="3" style="fill:var(--out)"/>`;
-    g += `<text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="10" style="fill:var(--muted)">${esc(p.label)}</text>`;
+function donutSvg(slices, total, sel) {
+  const R = 70, C = 2 * Math.PI * R, gap = slices.length > 1 ? 2.5 : 0; let off = 0;
+  const segs = slices.map((sl, i) => {
+    const frac = sl.value / total, len = Math.max(0.5, frac * C - gap);
+    const el = `<circle class="seg-c" data-act="seg" data-i="${i}" cx="100" cy="100" r="${R}" fill="none" stroke="${sl.color}"
+      stroke-width="${i === sel ? 30 : 22}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"
+      transform="rotate(-90 100 100)" style="opacity:${sel >= 0 && i !== sel ? 0.4 : 1}" tabindex="0" role="button" aria-label="${esc(sl.label)} ${rp(sl.value)}"/>`;
+    off += frac * C; return el;
+  }).join("");
+  const c = sel >= 0 ? slices[sel] : null;
+  const l1 = c ? (c.label.length > 17 ? c.label.slice(0, 16) + "…" : c.label) : "Total";
+  const l2 = c ? rpC(c.value) : rpC(total), l3 = c ? pct(c.value, total) + "%" : "";
+  return `<svg viewBox="0 0 200 200" role="img" aria-label="Grafik doughnut"><circle cx="100" cy="100" r="${R}" fill="none" stroke="#E1E7F0" stroke-width="22"/>${segs}
+    <text x="100" y="${c ? 92 : 98}" text-anchor="middle" font-size="11" fill="#78849A">${esc(l1)}</text>
+    <text x="100" y="${c ? 111 : 118}" text-anchor="middle" font-size="16" font-weight="700" fill="#17233F">${esc(l2)}</text>
+    ${l3 ? `<text x="100" y="127" text-anchor="middle" font-size="11" fill="#78849A">${l3}</text>` : ""}</svg>`;
+}
+function sliceDetail(sl, d) {
+  if (!sl) return `<p class="hint" style="text-align:center;margin:8px 0 0">Ketuk bagian grafik atau daftar di atas untuk melihat rinciannya.</p>`;
+  if (sl.note) return `<div class="alert ok" style="margin-top:8px">${esc(sl.note)} Totalnya ${rp(sl.value)}.</div>`;
+  const rows = sl.rows.slice().sort(byDateDesc);
+  if (anaView === "alokasi") {
+    return `<h2>Isi ${esc(sl.label)}</h2><div class="card">${groupDesc(rows, "out").map(([c, v]) =>
+      `<div class="bud"><div class="r"><span>${esc(c)}</span><b>${rp(v)}</b></div><small>${pct(v, sl.value)}% dari ${esc(sl.label.toLowerCase())}</small></div>`).join("")}</div>`;
+  }
+  return `<h2>${esc(sl.label)} · ${rows.length} ${anaView === "aset" || anaView === "utang" ? "item" : "transaksi"}</h2>${anaView === "aset" || anaView === "utang" ? rows.map(t => txRow(t)).join("") : dayList(rows)}`;
+}
+
+function budgetStatus(bm) {
+  const b = budgets[bm], items = (b && b.items) || {};
+  const real = {}; myTx.filter(t => t.type === "out" && t.date.startsWith(bm)).forEach(t => { real[t.category] = (real[t.category] || 0) + t.amount; });
+  const list = Object.keys(items).filter(c => items[c] > 0).map(c => {
+    const r = real[c] || 0, ratio = r / items[c];
+    return { cat: c, jatah: items[c], real: r, ratio, status: r > items[c] ? "over" : ratio >= 0.8 ? "near" : "ok" };
   });
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Grafik pemasukan dan pengeluaran per ${unit}">${g}</svg>`;
+  return { b, list, unb: Object.keys(real).filter(c => !(items[c] > 0)).map(c => ({ cat: c, real: real[c] })),
+    over: list.filter(x => x.status === "over"), near: list.filter(x => x.status === "near") };
 }
-function lineSvg(vals, labels) {
-  const W = 320, H = 150, pl = 10, pr = 10, pt = 10, pb = 22, ch = H - pt - pb, cw = W - pl - pr;
-  const mn = Math.min(0, ...vals), mx = Math.max(0, ...vals), span = (mx - mn) || 1;
-  const x = i => pl + (vals.length === 1 ? cw / 2 : cw * i / (vals.length - 1));
-  const y = v => pt + ch * (1 - (v - mn) / span);
-  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  let g = `<line x1="${pl}" x2="${W - pr}" y1="${y(0)}" y2="${y(0)}" style="stroke:var(--line)" stroke-dasharray="3 3"/>`;
-  g += `<polyline points="${pts}" fill="none" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" style="stroke:var(--accent)"/>`;
-  vals.forEach((v, i) => {
-    g += `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" style="fill:var(--accent)"/>`;
-    g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="10" style="fill:var(--muted)">${esc(labels[i])}</text>`;
-  });
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Grafik saldo berjalan">${g}</svg>`;
+function alertsHtml(d, bm, bs) {
+  const A = [];
+  if (d.net < 0) A.push(["bad", `<b>Defisit ${rp(-d.net)}</b> ${d.lower}. Uang keluar lebih besar dari uang masuk.`]);
+  bs.over.forEach(x => A.push(["bad", `<b>JEBOL: ${esc(x.cat)}</b> ${rp(x.real)} dari jatah ${rp(x.jatah)} (lebih ${rp(x.real - x.jatah)}).`]));
+  bs.near.forEach(x => A.push(["warn", `<b>Hampir habis: ${esc(x.cat)}</b> sudah ${Math.round(x.ratio * 100)}% dari jatah.`]));
+  const base = d.inT > 0 ? d.inT : d.outT;
+  if (base > 0 && d.wantT / base > 0.3) A.push(["warn", `<b>Keinginan besar</b>: ${pct(d.wantT, base)}% dari ${d.inT > 0 ? "pemasukan" : "pengeluaran"} (batas wajar 30%).`]);
+  if (!bs.list.length) A.push(["info", `Belum ada jatah untuk ${monthLabel(bm)}. <button class="ghost small" data-act="budget" style="margin-left:4px">Atur jatah</button>`]);
+  else if (!bs.over.length && !bs.near.length) A.push(["ok", "Semua pos masih dalam jatah."]);
+  return `<h2>Peringatan</h2>` + A.map(([t, h]) => `<div class="alert ${t === "bad" ? "" : t}">${h}</div>`).join("");
 }
-function catBars(rows, type) {
-  const g = group(rows, type); const max = g.length ? g[g.length - 1][1] : 1;
-  return `<div class="card chart ${type}">${g.length ? g.map(([c, v]) =>
-    `<div class="row" style="cursor:default"><span class="lab">${esc(c)}</span><span class="track"><i style="width:${Math.max(3, v / max * 100)}%"></i></span><span class="val">${rp(v)}</span></div>`).join("")
-    + `<p class="hint">Urut dari terkecil ke terbesar.</p>` : `<p class="hint" style="margin:0">Belum ada data.</p>`}</div>`;
+function conclusionHtml(d, bs) {
+  if (!d.inT && !d.outT) return `<div class="empty">Belum ada catatan ${d.lower}.</div>`;
+  const C = [], base = d.inT > 0 ? d.inT : d.outT, baseName = d.inT > 0 ? "pemasukan" : "pengeluaran";
+  const verdict = d.net >= 0
+    ? `<div class="verdict">SURPLUS ${rp(d.net)}. Uang masuk lebih besar dari uang keluar${d.inT > 0 ? ` (${pct(d.net, d.inT)}% dari pemasukan)` : ""}. Berhasil menabung ${d.lower}.</div>`
+    : `<div class="verdict bad">DEFISIT ${rp(-d.net)}. Uang keluar lebih besar dari uang masuk. Cari pos yang jebol dan perbaiki.</div>`;
+  if (d.net < 0) {
+    const top = groupDesc(d.outRows, "out").slice(0, 3).map(([c, v]) => `${esc(c)} ${rp(v)}`).join(", ");
+    C.push(["bad", bs.over.length ? `<b>Pos yang jebol:</b> ${bs.over.map(x => `${esc(x.cat)} (+${rp(x.real - x.jatah)})`).join(", ")}.`
+      : `<b>Pos terbesar:</b> ${top}. ${bs.list.length ? "" : "Atur jatah supaya pos yang jebol terlihat jelas."}`]);
+  }
+  const nr = pct(d.needT, base), wr = pct(d.wantT, base);
+  C.push([nr <= 50 ? "ok" : nr <= 70 ? "warn" : "bad",
+    `<b>Kebutuhan wajib</b> (makan, transportasi, tagihan, cicilan, kesehatan): ${rp(d.needT)} = ${nr}% dari ${baseName}. ${nr <= 50 ? "Terkendali." : nr <= 70 ? "Agak tinggi, perlu diawasi." : "Terlalu tinggi, ruang tabungan sempit."}`]);
+  C.push([wr <= 30 ? "ok" : "bad",
+    `<b>Keinginan</b> (belanja, hiburan, hobi, nongkrong): ${rp(d.wantT)} = ${wr}% dari ${baseName}. ${wr <= 30 ? "Wajar, tidak berlebihan." : "Berlebihan, batas wajar 30%."}`]);
+  let sr = null;
+  if (d.inT > 0) {
+    sr = pct(d.net, d.inT);
+    C.push([d.net < 0 ? "bad" : sr >= 20 ? "ok" : "warn", `<b>Tabungan</b>: ${d.net < 0 ? "tidak ada, malah defisit" : sr + "% dari pemasukan"}. ${d.net >= 0 && sr >= 20 ? "Target 20% tercapai." : "Target idealnya 20%."}`]);
+  }
+  const tw = groupDesc(d.wantRows, "out")[0];
+  if (d.wantT > 0 && (wr > 30 || d.net < 0 || (sr !== null && sr < 20))) C.push(["warn", `<b>Prioritas:</b> keinginan jangan sampai menggerus kebutuhan dan tabungan. Kurangi ${tw ? esc(tw[0]) : "pos keinginan"} lebih dulu.`]);
+  else C.push(["ok", `<b>Pola sehat:</b> kebutuhan aman, keinginan wajar, dan tabungan terjaga.`]);
+  return verdict + `<div class="card">${C.map(([t, h]) => `<div class="cn ${t === "ok" ? "" : t}"><i></i><span>${h}</span></div>`).join("")}
+    <p class="hint">Dihitung dari catatanmu sendiri. Hanya gambaran, bukan saran keuangan.</p></div>`;
 }
+function budgetHtml(bm, bs) {
+  const rows = bs.list.map(x => {
+    const lab = { over: "JEBOL", near: "HAMPIR HABIS", ok: "AMAN" }[x.status], w = Math.round(x.real / Math.max(x.jatah, x.real, 1) * 100), diff = x.real - x.jatah;
+    return `<div class="bud"><div class="r"><b>${esc(x.cat)}</b><span class="tag ${x.status === "ok" ? "" : x.status}">${lab}</span></div>
+      <div class="pb ${x.status === "ok" ? "" : x.status}"><i style="width:${Math.max(3, w)}%"></i></div>
+      <small>Jatah ${rp(x.jatah)} · Realisasi ${rp(x.real)} · ${diff > 0 ? "Lebih " + rp(diff) : "Sisa " + rp(-diff)}</small></div>`;
+  }).join("");
+  const unb = bs.unb.length ? `<p class="hint">Tanpa jatah: ${bs.unb.map(x => `${esc(x.cat)} ${rp(x.real)}`).join(", ")}.</p>` : "";
+  return `<h2>Jatah vs realisasi · ${monthLabel(bm)}</h2><div class="card">
+    ${rows || `<p class="hint" style="margin:0 0 8px">Belum ada jatah. Isi target awal bulan, misalnya jatah nongkrong Rp 500.000, lalu bandingkan dengan kenyataannya di akhir bulan.</p>`}${unb}
+    <div class="btns"><button class="btn small" data-act="budget">${bs.list.length ? "Ubah jatah" : "Atur jatah"}</button></div></div>`;
+}
+function correctionHtml(bm, bs) {
+  const notes = (bs.b && bs.b.notes) || {};
+  const cur = bs.over.map(x => `<div class="bud"><div class="r"><b>${esc(x.cat)}</b><span class="tag over">JEBOL</span></div>
+    <small>Lebih ${rp(x.real - x.jatah)} dari jatah ${monthLabel(bm)}.</small>
+    <div style="margin-top:4px;font-size:14px">${notes[x.cat] ? esc(notes[x.cat]) : `<span class="muted">Belum ada catatan.</span>`}</div>
+    <div class="btns"><button class="ghost small" data-act="note" data-cat="${esc(x.cat)}">${notes[x.cat] ? "Ubah catatan" : "Tulis catatan koreksi"}</button></div></div>`).join("");
+  const pm = prevMonth(bm), pbs = budgetStatus(pm), pn = (pbs.b && pbs.b.notes) || {};
+  const prev = pbs.over.map(x => `<div class="alert warn"><b>Jaga rem: ${esc(x.cat)}</b> jebol ${monthLabel(pm)} (${rp(x.real)} dari jatah ${rp(x.jatah)}).${pn[x.cat] ? `<br>Catatan: ${esc(pn[x.cat])}` : ""}</div>`).join("");
+  return `<h2>Catatan koreksi</h2>`
+    + (prev ? `<p class="hint" style="margin:0 0 6px">Pos yang jebol bulan lalu, supaya bulan ini lebih dijaga:</p>${prev}` : "")
+    + `<div class="card">${cur || `<p class="hint" style="margin:0">Belum ada pos yang jebol bulan ini.</p>`}</div>`;
+}
+
 function viewAnalisis() {
-  const unit = anaMode === "minggu" ? "minggu" : "bulan";
-  const toggle = `<div style="display:flex;gap:8px;margin-bottom:12px">${[["bulan", "Bulanan (6 bulan)"], ["minggu", "Mingguan (8 minggu)"]].map(([m, l]) =>
-    `<button class="ghost small" data-act="anaMode" data-mode="${m}" style="${anaMode === m ? "background:var(--ink);color:#fff;border-color:var(--ink)" : ""}">${l}</button>`).join("")}</div>`;
-  const head = `<h2 style="margin:4px 0 10px">Analisis arus kas</h2>`;
-  if (!myTx.length) return head + `<div class="empty">Belum ada catatan untuk dianalisis. Catat transaksi dulu.</div>`;
+  const head = `<h2 style="margin:4px 0 10px">Analisis</h2>`;
+  if (!myTx.length) return head + `<div class="empty">Belum ada catatan untuk dianalisis.<br>Buat laporan dulu.</div>`;
+  const d = anaData(), bm = budgetMonthNow(), bs = budgetStatus(bm);
+  const chip = (act, key, val, label, cur) => `<button class="chip ${cur === val ? "on" : ""}" data-act="${act}" data-${key}="${val}">${label}</button>`;
+  const periods = `<div class="chips">${[["bulan", "Bulan ini"], ["minggu", "Minggu ini"], ["custom", "Kustom"]].map(([v, l]) => chip("anaPeriod", "p", v, l, anaPeriod)).join("")}</div>`;
+  const custom = anaPeriod === "custom" ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
+    <div><label for="ana-from" style="margin-top:0">Dari</label><input class="f" type="date" id="ana-from" value="${esc(anaFrom)}"></div>
+    <div><label for="ana-to" style="margin-top:0">Sampai</label><input class="f" type="date" id="ana-to" value="${esc(anaTo)}"></div></div>` : "";
+  const views = `<div class="chips">${[["out", "Pengeluaran"], ["in", "Pemasukan"], ["alokasi", "Alokasi"], ["aset", "Aset"], ["utang", "Utang"]].map(([v, l]) => chip("anaView", "v", v, l, anaView)).join("")}</div>`;
+  const slices = anaSlices(d), total = slices.reduce((a, x) => a + x.value, 0);
+  const sel = anaSel >= 0 && anaSel < slices.length ? anaSel : -1;
+  const note = anaView === "aset" || anaView === "utang" ? `Posisi per ${esc(d.cap)}` : `${d.plabel}: ${esc(d.from)} s/d ${esc(d.to)}`;
+  const donut = total > 0
+    ? `<div class="card"><div class="donut">${donutSvg(slices, total, sel)}</div>
+        ${slices.map((sl, i) => `<button class="lg ${i === sel ? "on" : ""}" data-act="seg" data-i="${i}"><i style="background:${sl.color}"></i><span class="n">${esc(sl.label)}</span><span class="v">${rp(sl.value)}</span><span class="p">${pct(sl.value, total)}%</span></button>`).join("")}
+        <p class="hint" style="text-align:center">${note}</p></div>${sliceDetail(sel >= 0 ? slices[sel] : null, d)}`
+    : `<div class="card"><div class="donut">${`<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="none" stroke="#E1E7F0" stroke-width="22"/><text x="100" y="105" text-anchor="middle" font-size="12" fill="#78849A">Belum ada data</text></svg>`}</div><p class="hint" style="text-align:center">${note}</p></div>`;
+  return head + periods + custom + alertsHtml(d, bm, bs)
+    + `<h2>Grafik</h2>${views}${donut}`
+    + `<h2>Kesimpulan ${d.lower}</h2>${conclusionHtml(d, bs)}`
+    + budgetHtml(bm, bs) + correctionHtml(bm, bs);
+}
 
-  const ps = anaPeriods(anaMode).map(p => {
-    const rows = myTx.filter(t => t.date >= p.start && t.date <= p.end);
-    const inT = sumType(rows, "in"), outT = sumType(rows, "out");
-    return { ...p, inT, outT, net: inT - outT };
-  });
-  const rStart = ps[0].start, rEnd = ps[ps.length - 1].end;
-  const rangeRows = myTx.filter(t => t.date >= rStart && t.date <= rEnd);
-  const totIn = ps.reduce((a, p) => a + p.inT, 0), totOut = ps.reduce((a, p) => a + p.outT, 0), net = totIn - totOut;
-  let run = netOf(myTx.filter(t => t.date < rStart)); const bal = ps.map(p => (run += p.net));
-  const balanceNow = netOf(myTx);
-  const endEff = rEnd < todayStr() ? rEnd : todayStr();
-  const days = Math.max(1, Math.round((new Date(endEff + "T00:00") - new Date(rStart + "T00:00")) / 864e5) + 1);
-  const daily = totOut / days;
-  const cur = ps[ps.length - 1], prev = ps[ps.length - 2];
-
-  const li = [];
-  li.push(net >= 0 ? `Dalam ${ps.length} ${unit} terakhir, kamu menyisakan <b>${rp(net)}</b>.`
-    : `Dalam ${ps.length} ${unit} terakhir, pengeluaranmu lebih besar <b>${rp(-net)}</b> dari pemasukan.`);
-  if (totIn > 0) li.push(net >= 0 ? `Kamu menyisihkan <b>${Math.round(net / totIn * 100)}%</b> dari pemasukan.`
-    : `Pengeluaran setara <b>${Math.round(totOut / totIn * 100)}%</b> dari pemasukan.`);
-  li.push(`Rata-rata pengeluaran <b>${rp(daily)}</b> per hari.`);
-  if (balanceNow > 0 && daily > 0) li.push(`Dengan saldo ${rp(balanceNow)}, uangmu cukup sekitar <b>${Math.floor(balanceNow / daily)} hari</b> pada laju ini, tanpa pemasukan baru.`);
-  else if (balanceNow <= 0) li.push(`Saldo total catatanmu ${balanceNow < 0 ? "minus " + rp(-balanceNow) : "nol"}.`);
-  if (cur.outT > 0 || prev.outT > 0) li.push(`Pengeluaran ${unit} ini sejauh ini ${rp(cur.outT)}. ${unit[0].toUpperCase() + unit.slice(1)} lalu ${rp(prev.outT)}.`);
-  const g = group(rangeRows, "out");
-  if (g.length && totOut > 0) { const [c, v] = g[g.length - 1]; li.push(`Pengeluaran terbesar: <b>${esc(c)}</b> (${Math.round(v / totOut * 100)}% dari total pengeluaran).`); }
-
-  const legend = `<div style="display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:6px">
-    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--in);margin-right:5px"></i>Pemasukan</span>
-    <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--out);margin-right:5px"></i>Pengeluaran</span></div>`;
-  const table = ps.slice().reverse().map(p => `<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:6px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px;font-variant-numeric:tabular-nums">
-    <span>${esc(p.full)}</span><span style="color:var(--in)">${rp(p.inT)}</span><span style="color:var(--out)">${rp(p.outT)}</span>
-    <b style="color:${p.net >= 0 ? "var(--in)" : "var(--out)"}">${p.net < 0 ? "-" : ""}${rp(Math.abs(p.net))}</b></div>`).join("");
-
-  return head + toggle
-    + `<h2 style="margin-top:6px">Pemasukan dan pengeluaran per ${unit}</h2><div class="card">${cashSvg(ps, unit)}${legend}</div>`
-    + `<h2>Saldo berjalan</h2><div class="card">${lineSvg(bal, ps.map(p => p.label))}<p class="hint">Garis putus-putus menunjukkan saldo nol.</p></div>`
-    + `<h2>Rincian per ${unit}</h2><div class="card">
-        <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)"><span>Periode</span><span>Masuk</span><span>Keluar</span><span>Selisih</span></div>${table}</div>`
-    + `<h2>Pengeluaran per kategori</h2>${catBars(rangeRows, "out")}`
-    + `<h2>Pemasukan per sumber</h2>${catBars(rangeRows, "in")}`
-    + `<h2>Kesimpulan</h2><div class="card" style="display:grid;gap:10px;font-size:14px">${li.map(x => `<div>${x}</div>`).join("")}
-        <p class="hint" style="margin:0">Dihitung dari catatanmu sendiri. Hanya gambaran, bukan saran keuangan.</p></div>`;
+/* ---------- Jatah & catatan koreksi (jendela) ---------- */
+function sheetBudget() {
+  const bm = budgetMonthNow(), items = (budgets[bm] && budgets[bm].items) || {};
+  openSheet(`<h2 style="margin:0">Atur jatah ${monthLabel(bm)}</h2>
+    <p class="hint">Isi batas pengeluaran per pos untuk bulan ini. Kosongkan kalau tidak dibatasi.</p>
+    ${CATS.out.map((c, i) => `<label for="bg-${i}">${esc(c)}</label><input class="f" id="bg-${i}" inputmode="numeric" autocomplete="off" placeholder="0" value="${items[c] ? new Intl.NumberFormat("id-ID").format(items[c]) : ""}">`).join("")}
+    ${sheetButtons("doBudget", bm, "Simpan jatah")}`);
+}
+function saveBudget(bm, items, notes) {
+  setDoc(doc(db, "budgets", `${profile.uid}_${bm}`), { uid: profile.uid, month: bm, items, notes, updatedAt: serverTimestamp() }).catch(e => toast(friendly(e)));
+  closeSheet(); toast(navigator.onLine ? "Tersimpan." : "Tersimpan di perangkat. Terkirim otomatis saat online.");
+}
+function doBudget(bm) {
+  const items = {};
+  CATS.out.forEach((c, i) => { const v = +($(`#bg-${i}`).value.replace(/\D/g, "")); if (v > 0) items[c] = v; });
+  saveBudget(bm, items, (budgets[bm] && budgets[bm].notes) || {});
+}
+function sheetNote(cat) {
+  const bm = budgetMonthNow(), notes = (budgets[bm] && budgets[bm].notes) || {};
+  openSheet(`<h2 style="margin:0">Catatan koreksi: ${esc(cat)}</h2>
+    <p class="hint">Tulis kenapa pos ini jebol dan rencana supaya bulan depan lebih terjaga.</p>
+    <textarea class="f" id="sf-text" rows="4" maxlength="200">${esc(notes[cat] || "")}</textarea>
+    ${sheetButtons("doNote", cat, "Simpan catatan")}`);
+}
+function doNote(cat) {
+  const bm = budgetMonthNow(), b = budgets[bm] || {}, notes = { ...(b.notes || {}) }, text = $("#sf-text").value.trim();
+  if (text) notes[cat] = text; else delete notes[cat];
+  saveBudget(bm, b.items || {}, notes);
 }
 
 function viewLainnya() {
@@ -547,7 +787,7 @@ function viewLainnya() {
 
 function diffText(a) {
   const f = { type: "Jenis", amount: "Jumlah", category: "Kategori", date: "Tanggal", memo: "Catatan" };
-  const show = (k, v) => k === "amount" ? rp(v) : (k === "type" ? (v === "in" ? "Pemasukan" : "Pengeluaran") : (v || "—"));
+  const show = (k, v) => k === "amount" ? rp(v) : (k === "type" ? (TYPE_LABEL[v] || v) : (v || "—"));
   const out = [];
   for (const k in f) {
     const b = a.before && a.before[k], c = a.after && a.after[k];
@@ -568,7 +808,7 @@ function viewRiwayat() {
     <div><b>${esc(l.actorName)}</b> (${ROLE_LABEL[l.actorRole] || esc(l.actorRole)}) ${ROLE_ACT[l.action] || esc(l.action)} <b>${esc(l.targetName)}</b></div></div>`).join("");
   return `<h2 style="margin-top:4px">Riwayat perubahan</h2>
     <p class="hint" style="margin:0 0 10px">Catatan ini hanya bisa ditambah, tidak bisa diubah atau dihapus oleh siapa pun lewat aplikasi.</p>`
-    + (feedLoading ? `<div class="empty">Memuat…</div>`
+    + (feedLoading ? skList(3)
       : auditFeed.length ? auditFeed.map(a => auditHtml(a, true)).join("") : `<div class="empty">Belum ada riwayat data.</div>`)
     + `<h2>Perubahan peran dan keanggotaan</h2>`
     + (feedLoading ? "" : rl || `<div class="empty">Belum ada perubahan peran.</div>`)
@@ -612,7 +852,7 @@ const catOptions = (type, cur) => { const l = [...CATS[type]]; if (cur && !l.inc
 
 function fieldsForm(t) {
   return `<label for="sf-type">Jenis</label>
-    <select class="f" id="sf-type"><option value="out" ${t.type === "out" ? "selected" : ""}>Pengeluaran</option><option value="in" ${t.type === "in" ? "selected" : ""}>Pemasukan</option></select>
+    <select class="f" id="sf-type">${["in", "out", "debt", "asset"].map(k => `<option value="${k}" ${t.type === k ? "selected" : ""}>${TYPE_LABEL[k]}</option>`).join("")}</select>
     <label for="sf-amount">Jumlah (Rp)</label>
     <input class="f amount" id="sf-amount" inputmode="numeric" value="${new Intl.NumberFormat("id-ID").format(t.amount)}" autocomplete="off">
     <label for="sf-cat">Kategori</label><select class="f" id="sf-cat">${catOptions(t.type, t.category)}</select>
@@ -620,8 +860,8 @@ function fieldsForm(t) {
     <label for="sf-date">Tanggal</label><input class="f" type="date" id="sf-date" value="${esc(t.date)}">`;
 }
 function readFields() {
-  const amount = +$("#sf-amount").value.replace(/\D/g, "");
-  if (!amount) { sheetErr("Isi jumlah lebih dari 0."); return null; }
+  const raw = $("#sf-amount").value.replace(/\D/g, ""), amount = +raw, ty = $("#sf-type").value;
+  if (raw === "" || ((ty === "in" || ty === "out") && amount === 0)) { sheetErr("Isi jumlah lebih dari 0."); return null; }
   if (!$("#sf-date").value) { sheetErr("Pilih tanggal."); return null; }
   return { type: $("#sf-type").value, amount, category: $("#sf-cat").value, memo: $("#sf-memo").value.trim(), date: $("#sf-date").value };
 }
@@ -808,21 +1048,39 @@ async function announce() {
   } catch (e) { err.textContent = friendly(e); }
 }
 
-/* ---------- Dialog catat transaksi ---------- */
+/* ---------- Dialog buat laporan ---------- */
+const LBL = {
+  in: { amt: "Jumlah (Rp)", cat: "Sumber pemasukan", memo: "Catatan (opsional)", ph: "Misal: gaji bulan ini", date: "Tanggal", hint: "" },
+  out: { amt: "Jumlah (Rp)", cat: "Kategori", memo: "Catatan (opsional)", ph: "Misal: makan siang", date: "Tanggal", hint: "" },
+  asset: { amt: "Nilai saat ini (Rp)", cat: "Jenis aset", memo: "Nama aset", ph: "Misal: BCA, Motor Beat, Emas", date: "Per tanggal", hint: "Catat nilai terbarunya. Untuk memperbarui, buat laporan baru dengan nama yang sama." },
+  debt: { amt: "Sisa utang (Rp)", cat: "Jenis utang", memo: "Nama utang", ph: "Misal: Cicilan motor", date: "Per tanggal", hint: "Catat sisa yang masih harus dibayar. Isi 0 kalau sudah lunas." }
+};
 function setType(t) {
-  txType = t;
+  txType = t; const L = LBL[t];
   document.querySelectorAll("#seg button").forEach(b => { b.className = b.dataset.t === t ? `on ${t}` : ""; });
   $("#cat").innerHTML = CATS[t].map(c => `<option>${c}</option>`).join("");
+  document.querySelector('label[for="amount"]').textContent = L.amt;
+  document.querySelector('label[for="cat"]').textContent = L.cat;
+  document.querySelector('label[for="memo"]').textContent = L.memo;
+  document.querySelector('label[for="date"]').textContent = L.date;
+  $("#memo").placeholder = L.ph; $("#typeHint").textContent = L.hint;
+}
+function openAdd(type, cat, memo) {
+  setType(type || "out");
+  if (cat) $("#cat").value = cat;
+  $("#amount").value = ""; $("#memo").value = memo || ""; $("#date").value = todayStr(); $("#err").textContent = "";
+  $("#dlg").showModal(); $("#amount").focus();
 }
 $("#seg").onclick = e => { if (e.target.dataset.t) setType(e.target.dataset.t); };
 $("#cancel").onclick = () => $("#dlg").close();
 $("#save").onclick = () => {
-  const amount = +$("#amount").value.replace(/\D/g, "");
-  if (!amount) { $("#err").textContent = "Isi jumlah lebih dari 0."; return; }
+  const raw = $("#amount").value.replace(/\D/g, ""), amount = +raw, flow = txType === "in" || txType === "out";
+  if (raw === "" || (flow && amount === 0)) { $("#err").textContent = "Isi jumlah lebih dari 0."; return; }
   if (!$("#date").value) { $("#err").textContent = "Pilih tanggal."; return; }
+  let memo = $("#memo").value.trim(); if (!flow && !memo) memo = $("#cat").value;
   addDoc(collection(db, "transactions"), {
     uid: profile.uid, name: profile.name, type: txType, amount,
-    category: $("#cat").value, memo: $("#memo").value.trim(),
+    category: $("#cat").value, memo,
     date: $("#date").value, createdAt: serverTimestamp()
   }).catch(e => toast(friendly(e)));
   month = $("#date").value.slice(0, 7);
@@ -832,7 +1090,7 @@ $("#save").onclick = () => {
 
 /* ---------- Event ---------- */
 document.addEventListener("input", e => {
-  if (e.target.id === "amount" || e.target.id === "sf-amount") {
+  if (e.target.id === "amount" || e.target.id === "sf-amount" || (e.target.id || "").startsWith("bg-")) {
     const d = e.target.value.replace(/\D/g, "").slice(0, 12);
     e.target.value = d ? new Intl.NumberFormat("id-ID").format(+d) : "";
   }
@@ -842,10 +1100,7 @@ document.addEventListener("click", async e => {
   const a = el.dataset.act, id = el.dataset.id;
   if (a === "login") login();
   else if (a === "logout") signOut(auth);
-  else if (a === "add") {
-    setType("out"); $("#amount").value = ""; $("#memo").value = ""; $("#date").value = todayStr(); $("#err").textContent = "";
-    $("#dlg").showModal(); $("#amount").focus();
-  }
+  else if (a === "add") openAdd(el.dataset.type, el.dataset.cat, el.dataset.memo);
   else if (a === "tab") goTab(el.dataset.tab);
   else if (a === "back") goBack();
   else if (a === "prevWeek") { weekOffset--; loadWeek(); }
@@ -871,7 +1126,13 @@ document.addEventListener("click", async e => {
   else if (a === "extend") { const t = findTx(id); t && sheetExtend(t); }
   else if (a === "history") showHistory(id);
   else if (a === "closeSheet") closeSheet();
-  else if (a === "anaMode") { anaMode = el.dataset.mode; render(); }
+  else if (a === "anaPeriod") { anaPeriod = el.dataset.p; anaSel = -1; render(); }
+  else if (a === "anaView") { anaView = el.dataset.v; anaSel = -1; render(); }
+  else if (a === "seg") { const k = +el.dataset.i; anaSel = anaSel === k ? -1 : k; render(); }
+  else if (a === "budget") sheetBudget();
+  else if (a === "doBudget") doBudget(id);
+  else if (a === "note") sheetNote(el.dataset.cat);
+  else if (a === "doNote") doNote(id);
   else if (a === "clear") sheetClear();
   else if (a === "doClear") doClear(el);
   else if (a === "doFlag") doFlag(id, el);
@@ -884,6 +1145,11 @@ document.addEventListener("change", e => {
   if (e.target.id === "month") { month = e.target.value; render(); }
   else if (e.target.dataset.act === "setrole") setRole(e.target.dataset.uid, e.target.value);
   else if (["cl-who", "cl-mode", "cl-from", "cl-to"].includes(e.target.id)) updateClear();
+  else if (e.target.id === "ana-from" || e.target.id === "ana-to") {
+    if (e.target.id === "ana-from") anaFrom = e.target.value || anaFrom; else anaTo = e.target.value || anaTo;
+    if (anaFrom > anaTo) { const x = anaFrom; anaFrom = anaTo; anaTo = x; }
+    anaSel = -1; render();
+  }
   else if (e.target.id === "sf-type") $("#sf-cat").innerHTML = catOptions(e.target.value, "");
 });
 
