@@ -86,7 +86,7 @@ let people = [], auditFeed = [], roleLogs = [], purgeLogs = [], feedLoading = fa
 let txType = "out";
 let layers = [];
 let lastKey = "";
-let dataReady = false, budgets = {};
+let dataReady = false, budgets = {}, skelUntil = 0;
 let anaPeriod = "bulan", anaView = "out", anaSel = -1;
 let anaFrom = todayStr().slice(0, 8) + "01", anaTo = todayStr();
 const homeTab = () => isStaff() ? "masuk" : "catatan";
@@ -157,13 +157,20 @@ function mergeN() {
 function startData() {
   unsubs.forEach(f => f()); unsubs = [];
   myTx = []; flagged = []; nMine = []; nAll = []; notifs = []; budgets = {}; dataReady = false;
+  skelUntil = Date.now() + 900;
   if (!isActive()) return;
   tab = isStaff() ? "masuk" : "catatan";
   const uid = profile.uid;
   setTimeout(() => { if (!dataReady) { dataReady = true; render(); } }, 6000);
   unsubs.push(onSnapshot(query(collection(db, "transactions"), where("uid", "==", uid)),
     { includeMetadataChanges: true },
-    s => { myTx = s.docs.map(mapDoc); dataReady = true; render(); }, e => { dataReady = true; onErr(e); }));
+    s => {
+      myTx = s.docs.map(mapDoc);
+      const left = skelUntil - Date.now();
+      if (!dataReady && left > 0) setTimeout(() => { dataReady = true; render(); }, left); // beri waktu shimmer terlihat
+      else dataReady = true;
+      render();
+    }, e => { dataReady = true; onErr(e); }));
   unsubs.push(onSnapshot(query(collection(db, "budgets"), where("uid", "==", uid)),
     s => { budgets = {}; s.docs.forEach(d => { const x = d.data(); budgets[x.month] = x; }); render(); }, onErr));
   unsubs.push(onSnapshot(query(collection(db, "notifications"), where("toUid", "==", uid)),
