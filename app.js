@@ -110,11 +110,33 @@ const splash = () => `<div class="splash"><img src="logo.png" alt="" width="88" 
 const skRow = () => `<div class="sk-row"><div class="sk" style="width:36px;height:36px;border-radius:50%"></div>
   <div style="flex:1;display:grid;gap:7px"><div class="sk line" style="width:55%"></div><div class="sk line" style="width:35%;height:11px"></div></div>
   <div class="sk" style="width:74px;height:26px;border-radius:8px"></div></div>`;
-const skeleton = () => `<div class="sk" style="height:34px;width:60%;margin-bottom:14px"></div>
-  <div class="sk" style="height:150px;border-radius:18px"></div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 18px">
-    <div class="sk" style="height:66px"></div><div class="sk" style="height:66px"></div><div class="sk" style="height:66px"></div></div>
-  ${skRow()}${skRow()}${skRow()}`;
+const skTxRow = () => `<div class="tl-row" aria-hidden="true"><div class="sk ico"></div>
+  <div class="t" style="display:grid;gap:8px"><div class="sk line" style="width:52%;height:17px"></div><div class="sk line" style="width:36%;height:12px"></div>
+    <div class="sk" style="width:96px;height:20px;border-radius:999px"></div></div>
+  <div class="sk line" style="width:88px;height:18px"></div><div class="sk" style="width:11px;height:18px;border-radius:5px"></div></div>`;
+const skDay = rows => `<div class="tl-day"><div class="tl-head"><span class="cal" style="background:none;border:0"><i class="sk" style="width:34px;height:34px;border-radius:50%"></i></span>
+  <div class="sk line" style="width:170px;height:16px"></div><div class="sk" style="width:104px;height:30px;border-radius:999px"></div></div>
+  <div class="tl-card">${Array.from({ length: rows }, skTxRow).join("")}</div></div>`;
+const skCatatan = () => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <div class="sk line" style="width:130px;height:24px"></div><div class="sk" style="width:158px;height:44px;border-radius:14px"></div></div>
+  <section class="wallet skw" aria-hidden="true"><i class="wc wc1"></i><i class="wc wc2"></i>
+    <div class="w-body"><div class="w-top"><div class="skd" style="width:58px;height:58px;border-radius:16px;flex:none"></div><span class="w-div"></span>
+        <div class="w-sal" style="flex:1;display:grid;gap:10px"><div class="skd" style="height:13px;width:46%;border-radius:7px"></div><div class="skd" style="height:30px;width:78%;border-radius:10px"></div></div></div>
+      <div class="w-tiles"><div class="skd" style="height:84px;border-radius:16px"></div><div class="skd" style="height:84px;border-radius:16px"></div></div></div>
+    <div class="w-clasp"><i></i></div></section>
+  <div class="tiles">${Array.from({ length: 3 }, () => `<div class="tile" style="cursor:default"><div class="sk" style="width:12px;height:12px;border-radius:50%;margin-bottom:10px"></div>
+    <div class="sk line" style="width:55%;height:11px;margin-bottom:8px"></div><div class="sk line" style="width:82%"></div></div>`).join("")}</div>
+  <div class="hh"><div class="sk line" style="width:190px;height:24px"></div><div class="sk" style="width:38px;height:38px;border-radius:50%"></div></div>
+  <div class="chips">${[84, 98, 104].map(w => `<div class="sk" style="width:${w}px;height:44px;border-radius:999px;flex:none"></div>`).join("")}</div>
+  <div class="tl">${skDay(2)}${skDay(1)}</div>`;
+const skStaff = () => `<div class="weeknav"><div class="sk" style="width:44px;height:44px;border-radius:12px"></div>
+    <div class="sk line" style="width:170px;height:18px"></div><div class="sk" style="width:44px;height:44px;border-radius:12px"></div></div>
+  <div class="sk" style="height:150px;border-radius:18px;margin-bottom:18px"></div>
+  <div class="sk line" style="width:190px;height:20px;margin:0 0 12px"></div>
+  <div class="sk" style="height:150px;border-radius:18px;margin-bottom:18px"></div>
+  <div class="sk line" style="width:170px;height:20px;margin:0 0 12px"></div>
+  <div class="sk" style="height:120px;border-radius:18px"></div>`;
+const skeleton = () => (isStaff() && tab === "masuk") ? skStaff() : skCatatan();
 const skList = n => Array.from({ length: n }, skRow).join("");
 function fatal(e) {
   $("#app").innerHTML = `<div class="center"><h1>Gagal memuat</h1><p>${esc(friendly(e))}</p><button class="btn" data-act="logout">Keluar</button></div>`;
