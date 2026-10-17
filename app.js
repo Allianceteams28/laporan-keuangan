@@ -251,16 +251,71 @@ function unreadCount() {
 const badge = n => n ? `<span class="badge">${n}</span>` : "";
 
 const logoImg = n => `<img src="logo.png" alt="" width="${n}" height="${n}" style="border-radius:${Math.round(n * .24)}px">`;
+
+/* ---------- Ikon ---------- */
+const svgI = (d, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  makanan: '<path d="M7 3v7a2 2 0 0 0 2 2v9"/><path d="M5 3v5M9 3v5"/><path d="M17 3c-2 1.4-3 3.8-3 6.5 0 1.8.9 2.8 3 3.5V21"/>',
+  transportasi: '<path d="M5 3h14a1 1 0 0 1 1 1v13H4V4a1 1 0 0 1 1-1z"/><path d="M4 11h16M8 17v3M16 17v3"/><path d="M7.5 14h.01M16.5 14h.01" stroke-width="3"/>',
+  tagihan: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  cicilan: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h3"/>',
+  kesehatan: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  belanja: '<path d="M6 8h12l1 12H5z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>',
+  hiburan: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M16 5v14M3 10h5M3 14h5M16 10h5M16 14h5"/>',
+  hobi: '<path d="M6 9h12a4 4 0 0 1 4 4v1a3 3 0 0 1-5.2 2L15 14H9l-1.8 2A3 3 0 0 1 2 14v-1a4 4 0 0 1 4-4z"/><path d="M8 11v4M6 13h4"/><path d="M16 12h.01M18 14h.01" stroke-width="3"/>',
+  nongkrong: '<path d="M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M16 9h2a2 2 0 0 1 0 4h-2M7 3v2M11 3v2"/>',
+  lainnya: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.2"/>',
+  gaji: '<path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v11a2 2 0 0 0 2 2h14V9H5a2 2 0 0 1-2-2z"/><path d="M16 14.5h.01" stroke-width="3"/>',
+  bonus: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  usaha: '<path d="M4 8h16v11H4z"/><path d="M9 8V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16"/>',
+  hadiah: '<path d="M4 10h16v10H4zM3 7h18v3H3zM12 7v13"/><path d="M12 7C10 3 7.5 3.5 7.5 5.5S10 7 12 7zM12 7c2-4 4.5-3.5 4.5-1.5S14 7 12 7z"/>'
+};
+const CAT_STYLE = {
+  makanan: ["#FFD9DB", "#C23A45"], belanja: ["#FFD9E6", "#C2306A"], transportasi: ["#D5E8FF", "#1D4E9E"],
+  tagihan: ["#FFE9B8", "#9A6A00"], cicilan: ["#E3DCFF", "#5B3FC4"], kesehatan: ["#D3F0FF", "#0B6FA4"],
+  hiburan: ["#EAD9FF", "#7A3FD0"], hobi: ["#FFE0C7", "#C25A0A"], nongkrong: ["#FFE0C7", "#A5560C"],
+  lainnya: ["#E6EBF3", "#5A6780"], gaji: ["#CFF7E8", "#0B7D5B"], bonus: ["#FFF2C2", "#8A6A00"],
+  usaha: ["#D5E8FF", "#1D4E9E"], hadiah: ["#CFF7E8", "#0B7D5B"]
+};
+function catIcon(t, big) {
+  const k = String(t.category || "").toLowerCase();
+  const [bg, fg] = CAT_STYLE[k] || (t.type === "in" ? ["#CFF7E8", "#0B7D5B"] : ["#FFD9DB", "#C23A45"]);
+  const g = IC[k] ? svgI(IC[k]) : `<b style="font-size:22px">${esc(String(t.category || "?")[0].toUpperCase())}</b>`;
+  return `<span class="ico${big ? " big" : ""}" style="background:${bg};color:${fg}">${g}</span>`;
+}
+const I_BELL = svgI('<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9z"/><path d="M10 19a2.2 2.2 0 0 0 4 0"/>', 1.8);
+const I_SEARCH = svgI('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', 2.2);
+const I_CAL = svgI('<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M8 3v4M16 3v4M4 10h16"/>', 1.9);
+const I_CHV = svgI('<path d="m9 6 6 6-6 6"/>', 2.4);
+const I_CHEV_D = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+
 function header() {
-  return `<header class="top"><div class="in">${logoImg(38)}
-    <div class="ttl"><h1>Laporan Keuangan</h1>
-      <div class="who">${esc(profile.name)} <span class="pill ${profile.role}">${ROLE_LABEL[profile.role]}</span></div></div>
-    ${isActive() ? `<button class="ghost" data-act="tab" data-tab="notif" aria-label="Notifikasi">Notif${badge(unreadCount())}</button>` : ""}
-    <button class="ghost" data-act="logout">Keluar</button></div></header>`;
+  return `<header class="top"><div class="in">
+    <button class="prof" data-act="profile" aria-label="Buka profil dan keluar">${logoImg(38)}
+      <div class="ttl"><h1>Laporan Keuangan</h1>
+        <div class="who">${esc(profile.name)} <span class="pill ${profile.role}">${ROLE_LABEL[profile.role]}</span>${I_CHEV_D}</div></div></button>
+    ${isActive() ? `<button class="bell" data-act="tab" data-tab="notif" aria-label="Notifikasi">${I_BELL}${badge(unreadCount())}</button>` : ""}</div></header>`;
+}
+function sheetProfile() {
+  const av = profile.photo
+    ? `<img class="pf-av" src="${esc(profile.photo)}" alt="" referrerpolicy="no-referrer">`
+    : `<div class="pf-av">${esc(String(profile.name || "?")[0].toUpperCase())}</div>`;
+  const since = profile.createdAt && profile.createdAt.toDate
+    ? profile.createdAt.toDate().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) : "—";
+  const status = { pending: "Menunggu persetujuan", removed: "Dinonaktifkan" }[profile.role] || "Aktif";
+  openSheet(`<div style="text-align:center">${av}<h2 style="margin:0">${esc(profile.name)}</h2>
+    <div class="hint" style="margin:2px 0 8px;word-break:break-all">${esc(profile.email)}</div>
+    <span class="pill" style="background:var(--line);color:var(--ink)">${ROLE_LABEL[profile.role]}</span></div>
+    <div class="kv"><div><span>Peran</span><b>${ROLE_LABEL[profile.role]}</b></div>
+      <div><span>Bergabung</span><b>${esc(since)}</b></div>
+      <div><span>Status</span><b>${status}</b></div></div>
+    <div class="actions"><button class="btn light" data-act="closeSheet">Tutup</button>
+      <button class="btn danger" data-act="logout">Keluar</button></div>`);
 }
 
 function render() {
   if (!profile) return;
+  const hadFocus = !!(document.activeElement && document.activeElement.id === "hq");
   const keep = {};
   ["an-title", "an-body"].forEach(id => { const e = document.getElementById(id); if (e) keep[id] = e.value; });
 
@@ -294,6 +349,7 @@ function render() {
   const animate = key !== lastKey; lastKey = key;
   $("#app").innerHTML = `${header()}<div class="wrap ${animate ? "enter" : ""}">${offlineBar()}${backBar()}${(views[tab] || viewCatatan)()}</div>${nav}${fab}`;
   Object.entries(keep).forEach(([id, v]) => { const e = document.getElementById(id); if (e) e.value = v; });
+  if (hadFocus) { const q = document.getElementById("hq"); if (q) { q.focus(); const n = q.value.length; if (q.setSelectionRange) q.setSelectionRange(n, n); } }
 }
 
 const offlineBar = () => navigator.onLine ? "" :
@@ -328,20 +384,11 @@ window.addEventListener("popstate", () => {
 });
 
 /* ---------- Baris transaksi ---------- */
-function txRow(t, o = {}) {
+function txExtra(t, o = {}) {
   const mine = t.uid === profile.uid;
   const st = t.flagStatus || "none";
   const dl = deadlineOf(t);
   const passed = !!dl && Date.now() > dl.getTime();
-  const flow = t.type === "in" || t.type === "out";
-  const title = o.showName ? t.name : (flow ? t.category : (t.memo || t.category));
-  const sub = o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : (flow ? t.memo : `${t.category} · per ${t.date}`);
-  const main = `<div class="tx ${t.type}"><div class="dot">${TYPE_DOT[t.type] || "?"}</div>
-    <div class="t"><b>${esc(title)}${t.pending ? ' <span class="pill pending" style="animation:fade .3s ease 1.2s both">Menunggu terkirim</span>' : ""}</b>
-      <span>${esc(sub)}</span></div>
-    <div class="amt">${t.type === "in" ? "+" : t.type === "out" ? "-" : ""}${rp(t.amount)}</div>
-</div>`;
-
   let info = "";
   if (st !== "none") {
     info += `<div><span class="pill ${st}">${STATUS_LABEL[st]}</span></div>`;
@@ -360,6 +407,24 @@ function txRow(t, o = {}) {
   }
   if (st !== "none" || t.lastEditBy) btns.push(["history", "Riwayat"]);
   const btnHtml = btns.length ? `<div class="btns">${btns.map(([a, l]) => `<button class="ghost small" data-act="${a}" data-id="${t.id}">${l}</button>`).join("")}</div>` : "";
+  return { info, btnHtml, st };
+}
+
+function txRow(t, o = {}) {
+  const mine = t.uid === profile.uid;
+  const st = t.flagStatus || "none";
+  const dl = deadlineOf(t);
+  const passed = !!dl && Date.now() > dl.getTime();
+  const flow = t.type === "in" || t.type === "out";
+  const title = o.showName ? t.name : (flow ? t.category : (t.memo || t.category));
+  const sub = o.showName ? t.category + (t.memo ? " · " + t.memo : "") + " · " + t.date : (flow ? t.memo : `${t.category} · per ${t.date}`);
+  const main = `<div class="tx ${t.type}"><div class="dot">${TYPE_DOT[t.type] || "?"}</div>
+    <div class="t"><b>${esc(title)}${t.pending ? ' <span class="pill pending" style="animation:fade .3s ease 1.2s both">Menunggu terkirim</span>' : ""}</b>
+      <span>${esc(sub)}</span></div>
+    <div class="amt">${t.type === "in" ? "+" : t.type === "out" ? "-" : ""}${rp(t.amount)}</div>
+</div>`;
+
+  const { info, btnHtml } = txExtra(t, o);
   return `<div class="txc">${main}${(info || btnHtml) ? `<div class="extra">${info}${btnHtml}</div>` : ""}</div>`;
 }
 
@@ -396,28 +461,102 @@ function dayList(rows) {
   return out;
 }
 
+let histFilter = "all", histQ = "", histSearch = false, histCollapsed = new Set(), walletBusy = false;
+const fmtTime = ts => { const m = ms(ts); return m ? new Date(m).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }).replace(":", ".") : ""; };
+const longDayY = s => new Date(s + "T00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const walletSize = len => len <= 10 ? 32 : len <= 13 ? 26 : 21;
+const WALLET_ICO = `<svg class="w-ico" viewBox="0 0 64 64" width="62" height="62" aria-hidden="true"><defs><linearGradient id="wg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8EF5CF"/><stop offset="1" stop-color="#3FDDA6"/></linearGradient></defs>
+  <g transform="rotate(-8 22 14)"><rect x="12" y="4" width="26" height="17" rx="3" fill="#7BA4F2"/></g>
+  <g transform="rotate(10 40 12)"><rect x="26" y="2" width="26" height="17" rx="3" fill="#4F8AE8"/></g>
+  <rect x="4" y="16" width="52" height="40" rx="9" fill="url(#wg)"/><rect x="36" y="30" width="26" height="16" rx="7" fill="#1B8F73"/><circle cx="46" cy="38" r="3.4" fill="#BFF8E1"/></svg>`;
+
+function histRow(t) {
+  const sign = t.type === "in" ? "+" : "−";
+  const time = fmtTime(t.createdAt) || (t.pending ? "baru saja" : "");
+  const sub = [t.memo, time].filter(Boolean).join(" • ");
+  const st = t.flagStatus || "none";
+  const pills = `<span class="pl ${t.type}">${TYPE_LABEL[t.type]}</span>`
+    + (st !== "none" ? `<span class="pill ${st}">${STATUS_LABEL[st]}</span>` : "")
+    + (t.pending ? '<span class="pill pending" style="animation:fade .3s ease 1.2s both">Menunggu terkirim</span>' : "");
+  return `<button class="tl-row" data-act="txopen" data-id="${t.id}" style="--dot:${t.type === "in" ? "var(--mint)" : "var(--coral)"}">
+    ${catIcon(t)}<span class="t"><b>${esc(t.category)}</b><small>${esc(sub)}</small><span class="pls">${pills}</span></span>
+    <span class="am ${t.type}">${sign}${rp(t.amount)}</span><span class="chv">${I_CHV}</span></button>`;
+}
+function histListHtml() {
+  const q = histQ.trim().toLowerCase();
+  const all = myTx.filter(t => isFlow(t) && t.date.startsWith(month));
+  let rows = all;
+  if (histFilter !== "all") rows = rows.filter(t => t.type === histFilter);
+  if (q) rows = rows.filter(t => `${t.category} ${t.memo || ""} ${TYPE_LABEL[t.type]} ${t.amount} ${rp(t.amount)}`.toLowerCase().includes(q));
+  if (!rows.length) return `<div class="empty">${all.length ? "Tidak ada transaksi yang cocok." : `Belum ada transaksi di ${monthLabel(month)}.<br>Ketuk “Buat laporan” untuk mulai.`}</div>`;
+  rows = rows.slice().sort((a, b) => b.date.localeCompare(a.date) || ((ms(b.createdAt) ?? 1e15) - (ms(a.createdAt) ?? 1e15)));
+  const groups = new Map();
+  rows.forEach(t => { if (!groups.has(t.date)) groups.set(t.date, []); groups.get(t.date).push(t); });
+  return `<div class="tl">${[...groups].map(([d, list]) => {
+    const open = !histCollapsed.has(d);
+    return `<div class="tl-day"><div class="tl-head"><span class="cal">${I_CAL}</span><b>${esc(longDayY(d))}</b>
+      <button class="cnt ${open ? "open" : ""}" data-act="hday" data-date="${d}" aria-expanded="${open}">${list.length} transaksi ${I_CHV}</button></div>
+      ${open ? `<div class="tl-card">${list.map(histRow).join("")}</div>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+
 function viewCatatan() {
-  const cur = myTx.filter(t => isFlow(t) && t.date.startsWith(month)).sort(byDateDesc);
+  const cur = myTx.filter(t => isFlow(t) && t.date.startsWith(month));
   const inT = sumAmt(cur.filter(t => t.type === "in")), outT = sumAmt(cur.filter(t => t.type === "out"));
   const bal = inT - outT;
   const asOf = asOfOf(month);
   const aset = sumAmt(positions("asset", asOf).filter(t => t.amount > 0)), utang = sumAmt(positions("debt", asOf).filter(t => t.amount > 0));
   const nw = aset - utang;
-  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h2 style="margin:0">Catatan saya</h2>${monthSelect()}</div>
-    <section class="balance"><small>Saldo bulan ini</small>
-      <div class="big">${bal < 0 ? "-" : ""}${rp(Math.abs(bal))}</div>
-      <div class="split">
-        <button class="i" data-act="tab" data-tab="lap_in"><small>Pemasukan</small><b>${rp(inT)}</b><em>Lihat laporan ›</em></button>
-        <button class="o" data-act="tab" data-tab="lap_out"><small>Pengeluaran</small><b>${rp(outT)}</b><em>Lihat laporan ›</em></button></div></section>
+  const saldo = (bal < 0 ? "-" : "") + rp(Math.abs(bal));
+  const fit = n => rp(n).length > 14 ? rpC(n) : rp(n);
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0;font-size:19px">Catatan saya</h2>${monthSelect()}</div>
+    <section class="wallet" id="wallet" aria-label="Dompet">
+      <i class="wc wc1"></i><i class="wc wc2"></i>
+      <i class="orn bill b1"></i><i class="orn bill b2"></i><i class="orn coin c1"></i><i class="orn coin c2"></i><i class="orn coin c3"></i>
+      <div class="w-body">
+        <div class="w-top">${WALLET_ICO}<span class="w-div"></span>
+          <div class="w-sal"><small>Saldo bulan ini</small><b style="font-size:${walletSize(saldo.length)}px">${saldo}</b></div></div>
+        <div class="w-tiles">
+          <button class="w-tile i" data-act="wallet" data-kind="in" data-tab="lap_in"><small>Pemasukan</small><b>${fit(inT)}</b><em>Lihat laporan ›</em></button>
+          <button class="w-tile o" data-act="wallet" data-kind="out" data-tab="lap_out"><small>Pengeluaran</small><b>${fit(outT)}</b><em>Lihat laporan ›</em></button></div></div>
+      <div class="w-clasp"><i></i></div></section>
     <div class="tiles">
       <button class="tile" data-act="tab" data-tab="lap_aset"><span class="dt" style="background:var(--mint)"></span><small>Aset</small><b>${rpC(aset)}</b></button>
       <button class="tile" data-act="tab" data-tab="lap_utang"><span class="dt" style="background:var(--coral)"></span><small>Liabilitas</small><b>${rpC(utang)}</b></button>
       <button class="tile" data-act="tab" data-tab="lap_nw"><span class="dt" style="background:var(--navy)"></span><small>Net worth</small><b>${rpC(nw)}</b></button></div>
-    <h2>Transaksi</h2>
-    ${cur.length ? dayList(cur) : `<div class="empty">Belum ada transaksi di ${monthLabel(month)}.<br>Ketuk “Buat laporan” untuk mulai.</div>`}
+    <div class="hh"><h2>Riwayat Transaksi</h2>
+      <button class="iconbtn ${histSearch ? "on" : ""}" data-act="hsearch" aria-label="Cari transaksi">${I_SEARCH}</button></div>
+    ${histSearch ? `<div class="sbox">${I_SEARCH}<input id="hq" type="search" placeholder="Cari kategori atau catatan" value="${esc(histQ)}" autocomplete="off"></div>` : ""}
+    <div class="chips">${[["all", "Semua", ""], ["in", "Masuk", "var(--mint)"], ["out", "Keluar", "var(--coral)"]].map(([k, l, c]) =>
+      `<button class="chip ${histFilter === k ? "on" : ""}" data-act="hfilter" data-f="${k}">${c ? `<i style="background:${c}"></i>` : ""}${l}</button>`).join("")}</div>
+    <div id="histList">${histListHtml()}</div>
     ${cur.length ? `<p class="hint">Hanya founder yang dapat menghapus riwayat transaksi.</p>` : ""}
 `;
+}
+
+function sheetTx(id) {
+  const t = findTx(id); if (!t) return;
+  const { info, btnHtml } = txExtra(t, {});
+  const sign = t.type === "in" ? "+" : t.type === "out" ? "−" : "";
+  const row = (k, v) => v ? `<div><span>${k}</span><b>${v}</b></div>` : "";
+  openSheet(`<div style="text-align:center">${catIcon(t, true)}<h2 style="margin:10px 0 2px">${esc(t.category)}</h2>
+    <div class="am ${t.type}" style="font-size:26px">${sign}${rp(t.amount)}</div>
+    <div style="margin-top:6px"><span class="pl ${t.type}">${TYPE_LABEL[t.type]}</span></div></div>
+    <div class="kv">${row("Tanggal", esc(longDayY(t.date)))}${row("Dicatat", ms(t.createdAt) ? esc(fmtDT(t.createdAt)) : "baru saja")}${row("Catatan", esc(t.memo))}${row("Pemilik", t.uid !== profile.uid ? esc(t.name) : "")}</div>
+    ${(info || btnHtml) ? `<div class="extra" style="border:1px solid var(--line);border-radius:14px">${info}${btnHtml}</div>` : ""}
+    <div class="actions" style="grid-template-columns:1fr"><button class="btn light" data-act="closeSheet">Tutup</button></div>`);
+}
+
+function walletGo(kind, t) {
+  if (walletBusy) return;
+  const w = document.getElementById("wallet");
+  const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!w || reduce) { goTab(t); return; }
+  walletBusy = true;
+  w.classList.remove("go-in", "go-out"); void w.offsetWidth;
+  w.classList.add(kind === "in" ? "go-in" : "go-out");
+  setTimeout(() => { walletBusy = false; goTab(t); }, 820);
 }
 
 /* ---------- Laporan arus kas masuk / keluar ---------- */
@@ -1097,6 +1236,7 @@ $("#save").onclick = () => {
 
 /* ---------- Event ---------- */
 document.addEventListener("input", e => {
+  if (e.target.id === "hq") { histQ = e.target.value; const L = document.getElementById("histList"); if (L) L.innerHTML = histListHtml(); return; }
   if (e.target.id === "amount" || e.target.id === "sf-amount" || (e.target.id || "").startsWith("bg-")) {
     const d = e.target.value.replace(/\D/g, "").slice(0, 12);
     e.target.value = d ? new Intl.NumberFormat("id-ID").format(+d) : "";
@@ -1106,7 +1246,13 @@ document.addEventListener("click", async e => {
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "SELECT") return;
   const a = el.dataset.act, id = el.dataset.id;
   if (a === "login") login();
-  else if (a === "logout") signOut(auth);
+  else if (a === "logout") { closeSheet(); signOut(auth); }
+  else if (a === "profile") sheetProfile();
+  else if (a === "hsearch") { histSearch = !histSearch; if (!histSearch) histQ = ""; render(); if (histSearch) { const q = document.getElementById("hq"); if (q) q.focus(); } }
+  else if (a === "hfilter") { histFilter = el.dataset.f; render(); }
+  else if (a === "hday") { const d = el.dataset.date; if (histCollapsed.has(d)) histCollapsed.delete(d); else histCollapsed.add(d); const L = document.getElementById("histList"); if (L) L.innerHTML = histListHtml(); }
+  else if (a === "txopen") sheetTx(el.dataset.id);
+  else if (a === "wallet") walletGo(el.dataset.kind, el.dataset.tab);
   else if (a === "add") openAdd(el.dataset.type, el.dataset.cat, el.dataset.memo);
   else if (a === "tab") goTab(el.dataset.tab);
   else if (a === "back") goBack();
