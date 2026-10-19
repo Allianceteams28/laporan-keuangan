@@ -331,6 +331,107 @@
   .enter .tl-day{animation:rise .42s cubic-bezier(.2,.7,.2,1) both}
   .enter .tl-day:nth-child(2){animation-delay:.06s}.enter .tl-day:nth-child(3){animation-delay:.12s}.enter .tl-day:nth-child(n+4){animation-delay:.18s}
   .iconbtn svg{width:23px;height:23px}.cal svg{width:19px;height:19px}.cnt svg{width:14px;height:14px}.sbox svg{width:19px;height:19px}
+
+  /* ---------- Tab bar dengan ikon ---------- */
+  nav.bar button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 2px 9px;font-size:12px;border-top-width:3px}
+  nav.bar .ni{position:relative;display:grid;place-items:center;width:46px;height:29px;border-radius:15px;transition:background-color .22s ease,transform .18s ease}
+  nav.bar .ni svg{width:24px;height:24px}
+  nav.bar button.on .ni{background:rgba(82,227,177,.3)}
+  nav.bar button:active .ni{transform:scale(.92)}
+  nav.bar .nl{line-height:1.1}
+  nav.bar .ni .badge{position:absolute;top:-4px;right:-1px;margin:0;min-width:17px;height:17px;line-height:17px;padding:0 4px;font-size:10px}
+
+  /* ---------- Revisi ---------- */
+  .btn.wide{width:100%;display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;padding:15px 20px}
+  .btn svg{width:18px;height:18px}
+  .rv-hero{text-align:center;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px 18px 20px;margin-bottom:14px;box-shadow:0 2px 10px rgba(16,29,64,.04)}
+  .rv-art{display:block;width:190px;max-width:68%;height:auto;margin:0 auto 4px}
+  .rv-hero h3{font-size:20px;margin:6px 0 4px;color:var(--navy)}
+  .rv-hero p{color:var(--muted);font-size:14px;line-height:1.45;margin:0 auto 16px;max-width:290px}
+  .rv-sum{background:#EDF2FA;border:1px solid var(--line);border-radius:22px;padding:14px;margin-top:6px}
+  .rv-h{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:15px}
+  .rv-ic{width:30px;height:30px;border-radius:9px;background:#DCE7FA;color:var(--navy);display:grid;place-items:center}
+  .rv-ic svg{width:18px;height:18px}
+  .rv-st{display:grid;grid-template-columns:repeat(3,1fr);background:#fff;border-radius:16px;padding:12px 0}
+  .rv-st > div{text-align:center;padding:2px 6px;border-right:1px solid var(--line);min-width:0}
+  .rv-st > div:last-child{border-right:0}
+  .rv-st b{display:block;font-size:21px;color:var(--navy);font-variant-numeric:tabular-nums}
+  .rv-st span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+
+  /* ---------- Analisis ---------- */
+  .ai{flex:none;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#E8EEFB;color:var(--navy)}
+  .ai svg{width:22px;height:22px}
+  .at{flex:1;min-width:0;display:grid;gap:2px}
+  .at b{font-size:15px;color:var(--navy)}
+  .at span{font-size:13.5px;line-height:1.4;color:#4A5875}
+  .attn,.kes,.rkc{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:12px 0;cursor:pointer;font:inherit;color:var(--ink);background:#fff}
+  .attn > svg,.kes > svg,.rkc > svg{flex:none;width:18px;height:18px;color:#8C99B2}
+  .attn.warn,.kes.warn{background:#FFF4DC;border-color:#F6DFA8}.attn.warn .ai,.kes.warn .ai{background:#FFE5A8;color:#9A6700}
+  .attn.bad,.kes.bad{background:#FFEDED;border-color:#FFC9CB}.attn.bad .ai,.kes.bad .ai{background:#FFD3D5;color:#C2484D}
+  .attn.ok,.kes.ok{background:#E8FAF2;border-color:#BFEFDC}.attn.ok .ai,.kes.ok .ai{background:#C9F5E2;color:#0B7D5B}
+  .attn.info,.kes.info{background:#EEF3FB;border-color:#D5E0F3}
+  .rkc{margin:12px 0 4px}
+  .sum3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+  .sumt{background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 10px;min-width:0}
+  .sh{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;margin-bottom:8px;color:#4A5875}
+  .sic{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none}
+  .sic svg{width:15px;height:15px}
+  .sh.in .sic{background:#D5F8EA;color:#0B7D5B}.sh.out .sic{background:#FFDCDD;color:#C2484D}.sh.net .sic{background:#DCE6FB;color:#2F5BC7}
+  .sumt b{display:block;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .gd{color:#0E8A63}.bd{color:#D9364A}.nv{color:var(--navy)}
+  .card.rc{padding:14px 14px 12px}
+  .rc-t h3{font-size:16px;margin:0 0 10px}
+  .rc .chips{margin-bottom:10px}
+  .rc .chip{padding:8px 14px;font-size:13px}
+  .rc-body{display:grid;grid-template-columns:minmax(118px,42%) 1fr;gap:10px;align-items:center}
+  .rc .donut{max-width:none;margin:0}
+  .lgd{display:grid;gap:1px;min-width:0}
+  .lg2{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;align-items:center;gap:6px;width:100%;background:none;border:0;border-radius:10px;padding:6px;font:inherit;font-size:12px;color:var(--ink);text-align:left;cursor:pointer}
+  .lg2 i{width:10px;height:10px;border-radius:50%;display:block}
+  .lg2 .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .lg2 .p{color:var(--muted);font-variant-numeric:tabular-nums}
+  .lg2 .v{color:#4A5875;font-variant-numeric:tabular-nums}
+  .lg2.on{background:#EAF0FB}
+  .lg2.more{display:block;color:var(--muted);cursor:default;font-size:11.5px}
+  .jat{display:flex;gap:12px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0;cursor:pointer}
+  .jb{flex:1;min-width:0;display:grid;gap:7px}
+  .jb b{font-size:15px;color:var(--navy)}
+  .jb p{font-size:13.5px;color:#4A5875;margin:0;line-height:1.4}
+  .jr{display:flex;align-items:center;gap:10px}
+  .jr .pb{flex:1;margin:0;height:10px}
+  .jr em{font-style:normal;font-weight:700;font-size:13px;min-width:38px;text-align:right}
+  .jb .btn.small{justify-self:start}
+
+  /* ---------- Rekap transaksi (dokumen laporan) ---------- */
+  .rk-bar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+  .rk-bar .btn{padding:13px 10px;font-size:14px;border-radius:14px}
+  .doc{background:#fff;border:1px solid var(--line);border-top:4px solid var(--mint);border-radius:12px;padding:16px 14px;margin-top:6px;box-shadow:0 2px 10px rgba(16,29,64,.06)}
+  .doc-h{border-bottom:1px solid var(--line);padding-bottom:10px}
+  .doc-t{font-size:19px;font-weight:800;letter-spacing:.3px;color:var(--navy)}
+  .doc-s{color:var(--muted);font-size:13px;margin:2px 0 8px}
+  .doc-h dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;margin:0}
+  .doc-h dt{color:var(--muted)}.doc-h dd{margin:0;text-align:right}
+  .doc section{margin-top:16px}
+  .doc h3{font-size:14.5px;margin:0 0 8px;padding-bottom:5px;border-bottom:2px solid var(--mint);color:var(--navy)}
+  .sumr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .sumr > div{background:#EEF3FB;border-radius:10px;padding:9px 10px;min-width:0}
+  .sumr span{display:block;font-size:11px;color:var(--muted)}
+  .sumr b{font-size:14px;font-variant-numeric:tabular-nums}
+  .dgood{color:#0E8A63}.dbad{color:#D9364A}
+  .dtw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table.dt{width:100%;border-collapse:collapse;font-size:12.5px}
+  .dt th{background:#EEF3FB;text-align:left;padding:7px 8px;font-size:11.5px;color:var(--navy);white-space:nowrap}
+  .dt td{padding:7px 8px;border-bottom:1px solid #EEF1F7;vertical-align:top}
+  .dt .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .dt .mt{color:var(--muted)}
+  .dt tr.grp td{background:#F5F8FC;font-weight:700}
+  .dt tr.sub td{font-weight:700}
+  .dt tr.tot td{font-weight:800;border-top:1.5px solid var(--navy);border-bottom:0}
+  .dt tr.tot.neg td{color:#D9364A}
+  .dt small{color:var(--muted)}
+  table.dt.wide{min-width:520px}
+  .doc .note{font-size:12px;color:var(--muted);margin:8px 0 0}
+  .doc-f{margin-top:18px;padding-top:10px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);text-align:center}
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto}
     *,*::before,*::after{animation:none !important;transition:none !important}

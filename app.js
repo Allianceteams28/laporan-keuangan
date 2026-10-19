@@ -9,6 +9,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { buildReport, reportHtml, reportCsv, reportPdf, fmtD } from "./report.js";
 
 // Harus sama dengan email founder di firestore.rules
 const FOUNDER_EMAIL = "aljanedbagdady@gmail.com";
@@ -88,6 +89,8 @@ let layers = [];
 let lastKey = "";
 let dataReady = false, budgets = {}, skelUntil = 0;
 let anaPeriod = "bulan", anaView = "out", anaSel = -1;
+let revFilter = "open";
+let rkMode = "bulan", rkMonth = todayStr().slice(0, 7), rkWeek = 0, rkFrom = todayStr().slice(0, 8) + "01", rkTo = todayStr();
 let anaFrom = todayStr().slice(0, 8) + "01", anaTo = todayStr();
 const homeTab = () => isStaff() ? "masuk" : "catatan";
 const mainTabs = () => isStaff() ? ["masuk", "laporan", "anggota", "lainnya"] : ["catatan", "revisi", "analisis"];
@@ -305,6 +308,24 @@ function catIcon(t, big) {
   const g = IC[k] ? svgI(IC[k]) : `<b style="font-size:22px">${esc(String(t.category || "?")[0].toUpperCase())}</b>`;
   return `<span class="ico${big ? " big" : ""}" style="background:${bg};color:${fg}">${g}</span>`;
 }
+const I_WARN = svgI('<path d="M12 4 3 19h18L12 4z"/><path d="M12 10v4M12 17v.4"/>', 1.9);
+const I_UP = svgI('<path d="M12 19V6M6 11l6-6 6 6"/>', 2.5);
+const I_DOWN = svgI('<path d="M12 5v13M6 13l6 6 6-6"/>', 2.5);
+const I_TREND = svgI('<path d="m4 16 5-5 4 4 7-8"/><path d="M15 7h5v5"/>', 2.3);
+const I_BULB = svgI('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>', 1.9);
+const I_DOC = svgI('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>', 1.9);
+const I_OK = svgI('<circle cx="12" cy="12" r="9"/><path d="m8 12.4 2.9 2.9L16.5 9.5"/>', 2);
+const I_INFO = svgI('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.8v.4"/>', 2);
+const I_ARR = svgI('<path d="M5 12h14M13 6l6 6-6 6"/>', 2.4);
+const NAVI = {
+  catatan: svgI('<rect x="3" y="6" width="18" height="13" rx="3.2"/><path d="M3 10.5h18M16.5 15h1.8"/>', 1.9),
+  revisi: svgI('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 1.9),
+  analisis: svgI('<path d="M5 20v-7M12 20V5M19 20v-10"/>', 2.7),
+  masuk: svgI('<path d="M4 13l2.2-7h11.6L20 13"/><path d="M4 13v4.5A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V13h-4.6l-1 2h-4.8l-1-2z"/>', 1.8),
+  laporan: svgI('<path d="M6 21V4"/><path d="M6 5h11.5l-2 4 2 4H6"/>', 1.9),
+  anggota: svgI('<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.5-3 2.7-4.6 5.5-4.6s5 1.6 5.5 4.6"/><circle cx="17.2" cy="9.5" r="2.4"/><path d="M16.6 14.7c2.3.2 3.8 1.5 4.2 4"/>', 1.8),
+  lainnya: svgI('<rect x="4" y="4" width="6.5" height="6.5" rx="2"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="2"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="2"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="2"/>', 1.8)
+};
 const I_BELL = svgI('<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9z"/><path d="M10 19a2.2 2.2 0 0 0 4 0"/>', 1.8);
 const I_SEARCH = svgI('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', 2.2);
 const I_CAL = svgI('<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M8 3v4M16 3v4M4 10h16"/>', 1.9);
@@ -355,17 +376,18 @@ function render() {
   }
   if (isActive() && !dataReady) { $("#app").innerHTML = `${header()}<div class="wrap">${skeleton()}</div>`; return; }
   const staff = isStaff();
-  const views = { lap_in: viewLapIn, lap_out: viewLapOut, lap_aset: viewLapAset, lap_utang: viewLapUtang, lap_nw: viewLapNW, catatan: viewCatatan, revisi: viewRevisi, masuk: viewMasuk, laporan: viewLaporan,
+  const views = { lap_in: viewLapIn, lap_out: viewLapOut, lap_aset: viewLapAset, lap_utang: viewLapUtang, lap_nw: viewLapNW, catatan: viewCatatan, revisi: viewRevisi, revisi_list: viewRevisiList, ana_jatah: viewAnaJatah, ana_kes: viewAnaKes, rekap: viewRekap, masuk: viewMasuk, laporan: viewLaporan,
     anggota: viewAnggota, lainnya: viewLainnya, riwayat: viewRiwayat, notif: viewNotif, pengumuman: viewPengumuman, analisis: viewAnalisis };
   const openMine = myTx.filter(t => t.flagStatus === "open").length;
   const toReview = flagged.filter(t => t.flagStatus === "open" || t.flagStatus === "fixed").length;
   const items = staff
-    ? [["masuk", "Data masuk"], ["laporan", "Laporan" + badge(toReview)], ["anggota", "Anggota"], ["lainnya", "Lainnya"]]
-    : [["catatan", "Catatan"], ["revisi", "Revisi" + badge(openMine)], ["analisis", "Analisis"]];
-  const on = t => staff ? (tab === t || (t === "lainnya" && ["catatan", "riwayat", "pengumuman", "analisis"].includes(tab) || t === "lainnya" && tab.startsWith("lap_")))
-    : (tab === t || (t === "catatan" && tab.startsWith("lap_")));
-  const nav = `<nav class="bar"><div class="in">${items.map(([t, l]) =>
-    `<button data-act="tab" data-tab="${t}" class="${on(t) ? "on" : ""}">${l}</button>`).join("")}</div></nav>`;
+    ? [["masuk", "Data masuk", 0], ["laporan", "Laporan", toReview], ["anggota", "Anggota", 0], ["lainnya", "Lainnya", 0]]
+    : [["catatan", "Catatan", 0], ["revisi", "Revisi", openMine], ["analisis", "Analisis", 0]];
+  const SUBANA = ["ana_jatah", "ana_kes", "rekap"];
+  const on = t => staff ? (tab === t || (t === "lainnya" && (["catatan", "riwayat", "pengumuman", "analisis", ...SUBANA].includes(tab) || tab.startsWith("lap_"))))
+    : (tab === t || (t === "catatan" && tab.startsWith("lap_")) || (t === "analisis" && SUBANA.includes(tab)) || (t === "revisi" && tab === "revisi_list"));
+  const nav = `<nav class="bar"><div class="in">${items.map(([t, l, n]) =>
+    `<button data-act="tab" data-tab="${t}" class="${on(t) ? "on" : ""}" ${on(t) ? 'aria-current="page"' : ""}><span class="ni">${NAVI[t]}${n ? `<span class="badge">${n}</span>` : ""}</span><span class="nl">${l}</span></button>`).join("")}</div></nav>`;
   const fab = tab === "catatan" ? `<button class="fab" data-act="add" style="bottom:calc(76px + env(safe-area-inset-bottom))">+ Buat laporan</button>` : "";
   const key = [tab, anaPeriod, anaView, drill ? drill.type + drill.cat : "", weekOffset, weekLoading ? "L" : "D", feedLoading ? "L" : "D"].join("|");
   const animate = key !== lastKey; lastKey = key;
@@ -666,13 +688,37 @@ function viewLapNW() {
     <p class="hint">Tujuan utamanya melihat apakah kekayaan bersih bertambah dari bulan ke bulan.</p>`;
 }
 
+const RV_ART = `<svg class="rv-art" viewBox="0 0 220 170" aria-hidden="true">
+  <ellipse cx="110" cy="152" rx="78" ry="9" fill="#E3EAF6"/>
+  <path d="M26 98c-8-30 18-52 46-48s40-18 70-6 38 38 24 58-62 30-96 26S34 122 26 98z" fill="#DDF5EC"/>
+  <rect x="66" y="28" width="86" height="108" rx="14" fill="#1B2D66"/><rect x="74" y="40" width="70" height="88" rx="8" fill="#fff"/>
+  <rect x="91" y="19" width="36" height="17" rx="7.5" fill="#52E3B1"/>
+  <rect x="84" y="58" width="50" height="5" rx="2.5" fill="#CBD6EC"/><rect x="84" y="72" width="38" height="5" rx="2.5" fill="#CBD6EC"/><rect x="84" y="86" width="46" height="5" rx="2.5" fill="#CBD6EC"/>
+  <circle cx="148" cy="118" r="22" fill="#18A87F"/><path d="m138 118 7 7 13-14" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M44 42v10M39 47h10" stroke="#52E3B1" stroke-width="3" stroke-linecap="round"/><path d="M176 52v8M172 56h8" stroke="#6C8BEA" stroke-width="3" stroke-linecap="round"/>
+  <path d="M184 92h14" stroke="#52E3B1" stroke-width="3" stroke-linecap="round"/><circle cx="58" cy="108" r="3" fill="#6C8BEA"/></svg>`;
 function viewRevisi() {
+  const flows = myTx.filter(isFlow), open = flows.filter(t => t.flagStatus === "open");
+  const total = flows.length, checked = total - open.length;
+  const stats = `<div class="rv-sum"><div class="rv-h"><span class="rv-ic">${I_DOC}</span><b>Ringkasan revisi</b></div>
+    <div class="rv-st"><div><b>${open.length}</b><span>Perlu ditinjau</span></div><div><b>${checked}</b><span>Sudah diperiksa</span></div><div><b>${total}</b><span>Total catatan</span></div></div></div>`;
+  const hero = open.length
+    ? `<div class="rv-hero"><h3>${open.length} catatan perlu direvisi</h3><p>Periksa dan perbaiki sebelum batas waktunya, supaya tidak diubah admin.</p>
+        <button class="btn wide" data-act="revList">Lihat catatan ${I_ARR}</button></div>${open.slice(0, 3).map(t => txRow(t)).join("")}`
+    : `<div class="rv-hero">${RV_ART}<h3>Semua catatan aman</h3><p>Belum ada transaksi yang perlu diperiksa atau direvisi.</p>
+        <button class="btn wide" data-act="revList">Lihat catatan ${I_ARR}</button></div>`;
+  return `<h2 style="margin:4px 0 6px">Revisi</h2>${hero}${stats}`;
+}
+function viewRevisiList() {
+  const all = myTx.filter(t => t.flagStatus && t.flagStatus !== "none");
+  const test = { open: t => t.flagStatus === "open", done: t => t.flagStatus !== "open", all: () => true };
   const order = { open: 0, fixed: 1, admin_fixed: 2 };
-  const list = myTx.filter(t => t.flagStatus && t.flagStatus !== "none")
-    .sort((a, b) => (order[a.flagStatus] - order[b.flagStatus]) || ((ms(a.flagDeadline) || 0) - (ms(b.flagDeadline) || 0)));
-  return `<h2 style="margin-top:4px">Revisi</h2>` + (list.length
-    ? list.map(t => txRow(t)).join("")
-    : `<div class="empty">Tidak ada data yang ditandai. Semua aman.</div>`);
+  const list = all.filter(test[revFilter] || test.all).sort((a, b) => (order[a.flagStatus] - order[b.flagStatus]) || ((ms(a.flagDeadline) || 0) - (ms(b.flagDeadline) || 0)));
+  const chips = `<div class="chips">${[["open", "Perlu ditinjau"], ["done", "Sudah ditanggapi"], ["all", "Semua"]].map(([k, l]) =>
+    `<button class="chip ${revFilter === k ? "on" : ""}" data-act="revF" data-f="${k}">${l} (${all.filter(test[k]).length})</button>`).join("")}</div>`;
+  const empty = { open: "Tidak ada catatan yang perlu direvisi.", done: "Belum ada catatan yang sudah ditanggapi.", all: "Belum ada catatan yang pernah ditandai." }[revFilter] || "";
+  return `<h2 style="margin:4px 0 10px">Catatan untuk direvisi</h2>${chips}`
+    + (list.length ? list.map(t => txRow(t)).join("") : `<div class="empty">${empty}<br><button class="ghost small" data-act="tab" data-tab="catatan" style="margin-top:10px">Lihat semua catatan</button></div>`);
 }
 
 function group(rows, type) {
@@ -875,7 +921,7 @@ function budgetHtml(bm, bs) {
   const unb = bs.unb.length ? `<p class="hint">Tanpa jatah: ${bs.unb.map(x => `${esc(x.cat)} ${rp(x.real)}`).join(", ")}.</p>` : "";
   return `<h2>Jatah vs realisasi · ${monthLabel(bm)}</h2><div class="card">
     ${rows || `<p class="hint" style="margin:0 0 8px">Belum ada jatah. Isi target awal bulan, misalnya jatah nongkrong Rp 500.000, lalu bandingkan dengan kenyataannya di akhir bulan.</p>`}${unb}
-    <div class="btns"><button class="btn small" data-act="budget">${bs.list.length ? "Ubah jatah" : "Atur jatah"}</button></div></div>`;
+    <div class="btns"><button class="btn small" data-act="budget">Atur jatah</button></div></div>`;
 }
 function correctionHtml(bm, bs) {
   const notes = (bs.b && bs.b.notes) || {};
@@ -890,28 +936,147 @@ function correctionHtml(bm, bs) {
     + `<div class="card">${cur || `<p class="hint" style="margin:0">Belum ada pos yang jebol bulan ini.</p>`}</div>`;
 }
 
-function viewAnalisis() {
-  const head = `<h2 style="margin:4px 0 10px">Analisis</h2>`;
-  if (!myTx.length) return head + `<div class="empty">Belum ada catatan untuk dianalisis.<br>Buat laporan dulu.</div>`;
-  const d = anaData(), bm = budgetMonthNow(), bs = budgetStatus(bm);
-  const chip = (act, key, val, label, cur) => `<button class="chip ${cur === val ? "on" : ""}" data-act="${act}" data-${key}="${val}">${label}</button>`;
-  const periods = `<div class="chips">${[["bulan", "Bulan ini"], ["minggu", "Minggu ini"], ["custom", "Kustom"]].map(([v, l]) => chip("anaPeriod", "p", v, l, anaPeriod)).join("")}</div>`;
-  const custom = anaPeriod === "custom" ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
+const rpFit = n => { const t = rp(n); return t.length > 11 ? rpC(n) : t; };
+const rpL = n => n >= 1e7 ? rpC(n) : rp(n);
+const chipBtn = (act, key, val, label, cur) => `<button class="chip ${cur === val ? "on" : ""}" data-act="${act}" data-${key}="${val}">${label}</button>`;
+function anaTop(title) {
+  const periods = `<div class="chips">${[["bulan", "Bulan ini"], ["minggu", "Minggu ini"], ["custom", "Kustom"]].map(([v, l]) => chipBtn("anaPeriod", "p", v, l, anaPeriod)).join("")}</div>`;
+  const custom = anaPeriod === "custom" ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
     <div><label for="ana-from" style="margin-top:0">Dari</label><input class="f" type="date" id="ana-from" value="${esc(anaFrom)}"></div>
     <div><label for="ana-to" style="margin-top:0">Sampai</label><input class="f" type="date" id="ana-to" value="${esc(anaTo)}"></div></div>` : "";
-  const views = `<div class="chips">${[["out", "Pengeluaran"], ["in", "Pemasukan"], ["alokasi", "Alokasi"], ["aset", "Aset"], ["utang", "Utang"]].map(([v, l]) => chip("anaView", "v", v, l, anaView)).join("")}</div>`;
+  return `<h2 style="margin:4px 0 10px">${title}</h2>${periods}${custom}`;
+}
+function attention(d, bm, bs) {
+  const worst = bs.list.slice().sort((a, b) => b.ratio - a.ratio)[0];
+  if (bs.over.length) {
+    const x = bs.over.slice().sort((a, b) => b.ratio - a.ratio)[0], more = bs.over.length > 1 ? ` (+${bs.over.length - 1} pos lain)` : "";
+    return { tone: "bad", title: "Perhatian", icon: I_WARN, html: `Pengeluaran kategori <b>${esc(x.cat)}</b> sudah melewati jatah, lebih ${rp(x.real - x.jatah)}${more}.` };
+  }
+  if (worst && worst.ratio >= 0.5) return { tone: "warn", title: "Perhatian", icon: I_WARN, html: `Pengeluaran kategori <b>${esc(worst.cat)}</b> sudah mencapai ${Math.round(worst.ratio * 100)}% dari anggaran bulan ini.` };
+  if (d.net < 0) return { tone: "bad", title: "Perhatian", icon: I_WARN, html: `<b>Defisit ${rp(-d.net)}</b> ${d.lower}. Uang keluar lebih besar dari uang masuk.` };
+  const base = d.inT > 0 ? d.inT : d.outT;
+  if (base > 0 && d.wantT / base > 0.3) return { tone: "warn", title: "Perhatian", icon: I_WARN, html: `Pengeluaran keinginan sudah ${pct(d.wantT, base)}% dari ${d.inT > 0 ? "pemasukan" : "pengeluaran"} (batas wajar 30%).` };
+  if (bs.list.length) return { tone: "ok", title: "Aman", icon: I_OK, html: "Semua pos masih di bawah 50% dari jatah bulan ini." };
+  return { tone: "info", title: "Info", icon: I_INFO, html: "Belum ada jatah bulan ini. Atur jatah untuk memantau pengeluaranmu." };
+}
+function shortConclusion(d) {
+  if (!d.inT && !d.outT) return { tone: "info", html: `Belum ada catatan ${d.lower}.` };
+  return d.net >= 0
+    ? { tone: "ok", html: `<b>Surplus ${rp(d.net)}.</b> Uang masuk lebih besar dari uang keluar${d.inT > 0 ? ` (${pct(d.net, d.inT)}% dari pemasukan)` : ""}.` }
+    : { tone: "bad", html: `<b>Defisit ${rp(-d.net)}.</b> Uang keluar lebih besar dari uang masuk. Cari pos yang jebol.` };
+}
+function jatahCard(bm, bs) {
+  const tot = bs.list.reduce((a, x) => a + x.jatah, 0), real = bs.list.reduce((a, x) => a + x.real, 0), ratio = tot > 0 ? real / tot : 0;
+  const tone = ratio > 1 ? "over" : ratio >= 0.8 ? "near" : "";
+  const body = bs.list.length
+    ? `<p>Kamu sudah menggunakan <b>${Math.round(ratio * 100)}%</b> dari jatah bulan ini.</p><div class="jr"><div class="pb ${tone}"><i style="width:${Math.min(100, Math.max(3, Math.round(ratio * 100)))}%"></i></div><em>${Math.round(ratio * 100)}%</em></div>`
+    : `<p>Belum ada jatah bulan ini. Isi target awal bulan, lalu bandingkan dengan kenyataannya.</p>`;
+  return `<div class="jat" role="button" tabindex="0" data-act="tab" data-tab="ana_jatah"><span class="ai">${I_CAL}</span>
+    <div class="jb"><b>Jatah vs realisasi - ${monthLabel(bm)}</b>${body}<button class="btn small" data-act="budget">Atur jatah</button></div></div>`;
+}
+function viewAnalisis() {
+  const head = anaTop("Analisis");
+  if (!myTx.length) return head + `<div class="empty">Belum ada catatan untuk dianalisis.<br>Buat laporan dulu.</div>`;
+  const d = anaData(), bm = budgetMonthNow(), bs = budgetStatus(bm);
+  const at = attention(d, bm, bs), kc = shortConclusion(d);
+  const attnCard = `<button class="attn ${at.tone}" data-act="tab" data-tab="ana_jatah"><span class="ai">${at.icon}</span><span class="at"><b>${at.title}</b><span>${at.html}</span></span>${I_CHV}</button>`;
+  const tiles = `<h2>Ringkasan keuangan</h2><div class="sum3">
+    <div class="sumt"><div class="sh in"><span class="sic">${I_UP}</span>Pemasukan</div><b class="gd">${rpFit(d.inT)}</b></div>
+    <div class="sumt"><div class="sh out"><span class="sic">${I_DOWN}</span>Pengeluaran</div><b class="bd">${rpFit(d.outT)}</b></div>
+    <div class="sumt"><div class="sh net"><span class="sic">${I_TREND}</span>${d.net >= 0 ? "Surplus" : "Defisit"}</div><b class="${d.net < 0 ? "bd" : "nv"}">${rpFit(Math.abs(d.net))}</b></div></div>`;
+
   const slices = anaSlices(d), total = slices.reduce((a, x) => a + x.value, 0);
   const sel = anaSel >= 0 && anaSel < slices.length ? anaSel : -1;
+  const titles = { out: "Rincian pengeluaran", in: "Rincian pemasukan", alokasi: "Alokasi keuangan", aset: "Komposisi aset", utang: "Komposisi utang" };
   const note = anaView === "aset" || anaView === "utang" ? `Posisi per ${esc(d.cap)}` : `${d.plabel}: ${esc(d.from)} s/d ${esc(d.to)}`;
-  const donut = total > 0
-    ? `<div class="card"><div class="donut">${donutSvg(slices, total, sel)}</div>
-        ${slices.map((sl, i) => `<button class="lg ${i === sel ? "on" : ""}" data-act="seg" data-i="${i}"><i style="background:${sl.color}"></i><span class="n">${esc(sl.label)}</span><span class="v">${rp(sl.value)}</span><span class="p">${pct(sl.value, total)}%</span></button>`).join("")}
-        <p class="hint" style="text-align:center">${note}</p></div>${sliceDetail(sel >= 0 ? slices[sel] : null, d)}`
-    : `<div class="card"><div class="donut">${`<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="none" stroke="#E1E7F0" stroke-width="22"/><text x="100" y="105" text-anchor="middle" font-size="12" fill="#78849A">Belum ada data</text></svg>`}</div><p class="hint" style="text-align:center">${note}</p></div>`;
-  return head + periods + custom + alertsHtml(d, bm, bs)
-    + `<h2>Grafik</h2>${views}${donut}`
-    + `<h2>Kesimpulan ${d.lower}</h2>${conclusionHtml(d, bs)}`
-    + budgetHtml(bm, bs) + correctionHtml(bm, bs);
+  const views = `<div class="chips">${[["out", "Pengeluaran"], ["in", "Pemasukan"], ["alokasi", "Alokasi"], ["aset", "Aset"], ["utang", "Utang"]].map(([v, l]) => chipBtn("anaView", "v", v, l, anaView)).join("")}</div>`;
+  const shown = slices.length > 7 ? 6 : slices.length;
+  const legend = slices.slice(0, shown).map((sl, i) => `<button class="lg2 ${i === sel ? "on" : ""}" data-act="seg" data-i="${i}"><i style="background:${sl.color}"></i><span class="n">${esc(sl.label)}</span><span class="p">${pct(sl.value, total)}%</span><span class="v">${rpL(sl.value)}</span></button>`).join("")
+    + (slices.length > shown ? `<div class="lg2 more">+${slices.length - shown} lainnya (ketuk grafik)</div>` : "");
+  const body = total > 0
+    ? `<div class="rc-body"><div class="donut">${donutSvg(slices, total, sel)}</div><div class="lgd">${legend}</div></div>`
+    : `<div class="rc-body"><div class="donut"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="70" fill="none" stroke="#E1E7F0" stroke-width="22"/><text x="100" y="105" text-anchor="middle" font-size="12" fill="#78849A">Belum ada data</text></svg></div><div class="lgd"><p class="hint" style="margin:0">Belum ada data untuk ditampilkan.</p></div></div>`;
+  const rincian = `<div class="card rc"><div class="rc-t"><h3>${titles[anaView]}</h3></div>${views}${body}<p class="hint" style="text-align:center;margin:8px 0 0">${note}</p></div>${total > 0 ? sliceDetail(sel >= 0 ? slices[sel] : null, d) : ""}`;
+
+  const kes = `<button class="kes ${kc.tone}" data-act="tab" data-tab="ana_kes"><span class="ai">${I_BULB}</span><span class="at"><b>Kesimpulan ${d.lower}</b><span>${kc.html}</span></span>${I_CHV}</button>`;
+  const rekap = `<button class="rkc" data-act="tab" data-tab="rekap"><span class="ai">${I_DOC}</span><span class="at"><b>Rekap transaksi</b><span>Laporan keuangan 1 bulan, 1 minggu, atau kustom. Bisa diunduh sebagai PDF atau Excel.</span></span>${I_CHV}</button>`;
+  return head + attnCard + tiles + rincian + kes + jatahCard(bm, bs) + rekap;
+}
+function allocBars(d) {
+  const base = d.inT > 0 ? d.inT : d.outT, nm = d.inT > 0 ? "pemasukan" : "pengeluaran";
+  if (!base) return "";
+  const nr = pct(d.needT, base), wr = pct(d.wantT, base), sr = d.inT > 0 ? pct(d.net, d.inT) : 0;
+  const bar = (label, v, rule, st) => `<div class="bud"><div class="r"><b>${label}</b><span>${v}% dari ${nm}</span></div><div class="pb ${st}"><i style="width:${Math.min(100, Math.max(3, v))}%"></i></div><small>${rule}</small></div>`;
+  return `<h2>Alokasi dibanding patokan</h2><div class="card">
+    ${bar("Kebutuhan wajib", nr, "Patokan maksimal 50%", nr <= 50 ? "" : nr <= 70 ? "near" : "over")}
+    ${bar("Keinginan", wr, "Patokan maksimal 30%", wr <= 30 ? "" : "over")}
+    ${d.inT > 0 ? bar("Tabungan", Math.max(0, sr), "Patokan minimal 20%", sr >= 20 ? "" : "near") : ""}</div>`;
+}
+function viewAnaKes() {
+  const d = anaData(), bs = budgetStatus(budgetMonthNow());
+  return anaTop(`Kesimpulan ${d.lower}`) + `<p class="hint" style="margin:0 0 10px">${esc(d.plabel)}: ${esc(d.from)} s/d ${esc(d.to)}</p>` + conclusionHtml(d, bs) + allocBars(d);
+}
+function viewAnaJatah() {
+  const d = anaData(), bm = budgetMonthNow(), bs = budgetStatus(bm);
+  const tot = bs.list.reduce((a, x) => a + x.jatah, 0), real = bs.list.reduce((a, x) => a + x.real, 0);
+  const sum = bs.list.length ? `<div class="sum3" style="margin-bottom:12px">
+      <div class="sumt"><div class="sh net">Total jatah</div><b class="nv">${rpFit(tot)}</b></div>
+      <div class="sumt"><div class="sh out">Realisasi</div><b class="bd">${rpFit(real)}</b></div>
+      <div class="sumt"><div class="sh ${real > tot ? "out" : "in"}">${real > tot ? "Lebih" : "Sisa"}</div><b class="${real > tot ? "bd" : "gd"}">${rpFit(Math.abs(tot - real))}</b></div></div>` : "";
+  return `<h2 style="margin:4px 0 4px">Analisis pengeluaran vs jatah</h2><p class="hint" style="margin:0 0 10px">${monthLabel(bm)}</p>${sum}`
+    + alertsHtml(d, bm, bs) + budgetHtml(bm, bs) + correctionHtml(bm, bs);
+}
+
+/* ---------- Rekap transaksi (laporan formal + unduh) ---------- */
+function rkRange() {
+  if (rkMode === "minggu") {
+    const st = weekStart(new Date()); st.setDate(st.getDate() - 7 * rkWeek); const e = new Date(st); e.setDate(e.getDate() + 6);
+    return [ymd(st), ymd(e), rkWeek === 0 ? "Minggu ini" : rkWeek === 1 ? "Minggu lalu" : "Minggu " + fmtD(ymd(st))];
+  }
+  if (rkMode === "custom") return [rkFrom, rkTo, "Periode kustom"];
+  const [y, m] = rkMonth.split("-").map(Number);
+  return [`${rkMonth}-01`, ymd(new Date(y, m, 0)), monthLabel(rkMonth)];
+}
+function rkReport() {
+  const [from, to, label] = rkRange();
+  const cap = to > todayStr() ? todayStr() : to;
+  const bm = rkMode === "bulan" ? rkMonth : "";
+  const bs = bm ? budgetStatus(bm) : null;
+  return buildReport({
+    name: profile.name, from, to, label, cap, rows: myTx.filter(t => isFlow(t) && t.date >= from && t.date <= to),
+    assets: positions("asset", cap), debts: positions("debt", cap),
+    budget: bs && bs.list.length ? bs.list : null, budgetMonthLabel: bm ? monthLabel(bm) : "",
+    generated: new Date(), needCats: NEED_CATS, wantCats: WANT_CATS, lancarCats: ASSET_LANCAR, debtShort: "Utang jangka pendek"
+  });
+}
+function viewRekap() {
+  const chips = `<div class="chips">${[["bulan", "1 Bulan"], ["minggu", "1 Minggu"], ["custom", "Kustom"]].map(([v, l]) => chipBtn("rkMode", "m", v, l, rkMode)).join("")}</div>`;
+  const now = new Date(), months = new Set(myTx.map(t => t.date.slice(0, 7))); months.add(todayStr().slice(0, 7)); months.add(rkMonth);
+  let picker = "";
+  if (rkMode === "bulan") picker = `<select class="f" id="rk-month" aria-label="Pilih bulan">${[...months].sort().reverse().map(m => `<option value="${m}" ${m === rkMonth ? "selected" : ""}>${monthLabel(m)}</option>`).join("")}</select>`;
+  else if (rkMode === "minggu") picker = `<select class="f" id="rk-week" aria-label="Pilih minggu">${Array.from({ length: 12 }, (_, i) => {
+    const st = weekStart(now); st.setDate(st.getDate() - 7 * i); const e = new Date(st); e.setDate(e.getDate() + 6);
+    return `<option value="${i}" ${i === rkWeek ? "selected" : ""}>${i === 0 ? "Minggu ini" : i === 1 ? "Minggu lalu" : "Minggu " + (i + 1)} · ${fmtD(ymd(st))} s/d ${fmtD(ymd(e))}</option>`;
+  }).join("")}</select>`;
+  else picker = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label for="rk-from" style="margin-top:0">Dari</label><input class="f" type="date" id="rk-from" value="${esc(rkFrom)}"></div>
+    <div><label for="rk-to" style="margin-top:0">Sampai</label><input class="f" type="date" id="rk-to" value="${esc(rkTo)}"></div></div>`;
+  const bad = rkMode === "custom" && (!rkFrom || !rkTo || rkFrom > rkTo);
+  const dl = bad ? "" : `<div class="rk-bar"><button class="btn" data-act="rkPdf">Unduh PDF</button><button class="btn light" data-act="rkCsv">Unduh Excel (CSV)</button></div>`;
+  return `<h2 style="margin:4px 0 10px">Rekap transaksi</h2>${chips}${picker}
+    ${bad ? `<div class="alert warn" style="margin-top:12px">Tanggal awal harus sebelum tanggal akhir.</div>` : dl + reportHtml(rkReport())}`;
+}
+const slug = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
+function saveFile(blob, name) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+}
+function rkDownload(kind) {
+  const rep = rkReport(), base = `Laporan-Keuangan_${slug(profile.name)}_${slug(rep.label)}`;
+  try {
+    if (kind === "pdf") saveFile(new Blob([reportPdf(rep)], { type: "application/pdf" }), base + ".pdf");
+    else saveFile(new Blob([reportCsv(rep)], { type: "text/csv;charset=utf-8" }), base + ".csv");
+    toast(kind === "pdf" ? "PDF diunduh." : "File Excel (CSV) diunduh.");
+  } catch (e) { toast("Gagal membuat berkas: " + (e && e.message || e)); }
 }
 
 /* ---------- Jatah & catatan koreksi (jendela) ---------- */
@@ -1305,6 +1470,11 @@ document.addEventListener("click", async e => {
   else if (a === "anaView") { anaView = el.dataset.v; anaSel = -1; render(); }
   else if (a === "seg") { const k = +el.dataset.i; anaSel = anaSel === k ? -1 : k; render(); }
   else if (a === "budget") sheetBudget();
+  else if (a === "revList") { revFilter = myTx.some(t => t.flagStatus === "open") ? "open" : "all"; goTab("revisi_list"); }
+  else if (a === "revF") { revFilter = el.dataset.f; render(); }
+  else if (a === "rkMode") { rkMode = el.dataset.m; render(); }
+  else if (a === "rkPdf") rkDownload("pdf");
+  else if (a === "rkCsv") rkDownload("csv");
   else if (a === "doBudget") doBudget(id);
   else if (a === "note") sheetNote(el.dataset.cat);
   else if (a === "doNote") doNote(id);
@@ -1324,6 +1494,11 @@ document.addEventListener("change", e => {
     if (e.target.id === "ana-from") anaFrom = e.target.value || anaFrom; else anaTo = e.target.value || anaTo;
     if (anaFrom > anaTo) { const x = anaFrom; anaFrom = anaTo; anaTo = x; }
     anaSel = -1; render();
+  }
+  else if (e.target.id === "rk-month") { rkMonth = e.target.value; render(); }
+  else if (e.target.id === "rk-week") { rkWeek = +e.target.value; render(); }
+  else if (e.target.id === "rk-from" || e.target.id === "rk-to") {
+    if (e.target.id === "rk-from") rkFrom = e.target.value; else rkTo = e.target.value; render();
   }
   else if (e.target.id === "sf-type") $("#sf-cat").innerHTML = catOptions(e.target.value, "");
 });
